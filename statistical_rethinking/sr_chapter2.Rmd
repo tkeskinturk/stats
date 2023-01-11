@@ -1,0 +1,365 @@
+---
+title: "Soc722 - SR Chapter 2"
+author: "Turgut Keskintürk"
+date: '2022-09-23'
+output:
+  html_document:
+    theme: united
+    toc: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Hello there! Let's start with our exercises for McElreath's *Statistical Rethinking*, Chapter 2.
+
+# Set-Up
+
+```{r, message=FALSE}
+
+# load the relevant packages
+library(tidyverse) # I hided the output. So ugly!
+
+```
+
+# Responses to Questions
+
+## Easy Problems
+
+**2E1**. (2): Pr(rain|Monday) and (4) Pr(rain|Monday)/Pr(Monday) are equal to the statement.
+
+**2E2**. (3): The probability that it is Monday, given that it is raining.
+
+**2E3**. (1): Pr(Monday|rain) and (4) Pr(Monday|rain) Pr(rain)/ Pr(Monday) are equal to the statement.
+
+**2E4**. The statement "the probability of water is 0.7" means that if I randomly pick a spot in the globe, I have a 7 in 10 chance that the spot is water. This means that probability describes a relation of uncertainty, rather than an objective reality.
+
+## Medium Problems
+
+**2M1**. In this question, we are going to compute grid approximate posterior distributions for some sets of observations. We will assume a uniform prior for each case. Let us begin.
+
+Part (1): W, W, W.
+
+```{r}
+
+d <-
+  tibble(grid = seq(
+    from = 0,
+    to = 1,
+    length.out = 30
+  ),
+  # I love 30, it's probably a frequentist thing, no? :)
+  prior = 1) %>%
+  mutate(likelihood = dbinom(3, size = 3, prob = grid)) %>%
+  mutate(posterior = likelihood * prior) %>%
+  mutate(posterior_std = posterior / sum(posterior))
+
+d %>%
+  ggplot(aes(x = grid, y = posterior_std)) +
+  geom_point() + geom_line() +
+  labs(x = "Probability of Water", y = "Posterior Probability") +
+  theme_bw()
+
+```
+
+Part (2): W, W, W, L.
+
+```{r}
+
+d <-
+  tibble(grid = seq(
+    from = 0,
+    to = 1,
+    length.out = 30
+  ),
+  prior = 1) %>%
+  mutate(likelihood = dbinom(3, size = 4, prob = grid)) %>%
+  mutate(posterior = likelihood * prior) %>%
+  mutate(posterior_std = posterior / sum(posterior))
+
+
+d %>%
+  ggplot(aes(x = grid, y = posterior_std)) +
+  geom_point() + geom_line() +
+  labs(x = "Probability of Water", y = "Posterior Probability") +
+  theme_bw()
+
+```
+
+Part (3): L, W, W, L, W, W, W.
+
+```{r}
+
+d <-
+  tibble(grid = seq(
+    from = 0,
+    to = 1,
+    length.out = 30
+  ),
+  prior = 1) %>%
+  mutate(likelihood = dbinom(5, size = 7, prob = grid)) %>%
+  mutate(posterior = likelihood * prior) %>%
+  mutate(posterior_std = posterior / sum(posterior))
+
+d %>%
+  ggplot(aes(x = grid, y = posterior_std)) +
+  geom_point() + geom_line() +
+  labs(x = "Probability of Water", y = "Posterior Probability") +
+  theme_bw()
+
+```
+
+**2M2**. OK, now we assume a prior = 0 if p < 0.5, and a positive *c* if p >= 0.5. Same computations and plotting for same set of thingies. In order to do that, I am going to create some logical conditions for the prior.
+
+Part (1): W, W, W.
+
+```{r}
+d <-
+  tibble(grid = seq(
+    from = 0,
+    to = 1,
+    length.out = 30
+  ),
+  prior = ifelse(grid < 0.5, 0, 1)) %>%
+  mutate(likelihood = dbinom(3, size = 3, prob = grid)) %>%
+  mutate(posterior = likelihood * prior) %>%
+  mutate(posterior_std = posterior / sum(posterior))
+
+d %>%
+  ggplot(aes(x = grid, y = posterior_std)) +
+  geom_point() + geom_line() +
+  labs(x = "Probability of Water", y = "Posterior Probability") +
+  theme_bw()
+
+```
+
+Part (2): W, W, W, L.
+
+```{r}
+
+d <-
+  tibble(grid = seq(
+    from = 0,
+    to = 1,
+    length.out = 30
+  ),
+  prior = ifelse(grid < 0.5, 0, 1)) %>%
+  mutate(likelihood = dbinom(3, size = 4, prob = grid)) %>%
+  mutate(posterior = likelihood * prior) %>%
+  mutate(posterior_std = posterior / sum(posterior))
+
+d %>%
+  ggplot(aes(x = grid, y = posterior_std)) +
+  geom_point() + geom_line() +
+  labs(x = "Probability of Water", y = "Posterior Probability") +
+  theme_bw()
+
+```
+
+Part (3): L, W, W, L, W, W, W.
+
+```{r}
+
+d <-
+  tibble(grid = seq(
+    from = 0,
+    to = 1,
+    length.out = 30
+  ),
+  prior = ifelse(grid < 0.5, 0, 1)) %>%
+  mutate(likelihood = dbinom(5, size = 7, prob = grid)) %>%
+  mutate(posterior = likelihood * prior) %>%
+  mutate(posterior_std = posterior / sum(posterior))
+
+d %>%
+  ggplot(aes(x = grid, y = posterior_std)) +
+  geom_point() + geom_line() +
+  labs(x = "Probability of Water", y = "Posterior Probability") +
+  theme_bw()
+
+```
+
+Nice!
+
+**2M3**. OK, we are going to use the Bayes here! What we want to know is Pr(Earth|Land).
+
+We can write the following rule:
+
+$$ 
+Pr(Earth|Land) = \frac{Pr(Land|Earth)*Pr(Earth)}{Pr(Land)}
+$$ 
+
+We know that Pr(Land|Earth) is 0.3. We also assumed that Pr(Earth) is 0.5. All we want to know is the Pr(Land), which is calculated as:
+
+$$
+Pr(Land) = Pr(Land|Earth)*Pr(Earth) + Pr(Land|Mars)*Pr(Mars)
+$$ 
+
+Let's do the math:
+
+```{r}
+
+0.3 * 0.5 / (0.3*0.5 + 1*0.5)
+
+```
+
+Ta daa! Bayes rules!
+
+**2M4**. Three cards, two sides, either black or white, but different compositions. This is the pattern: BB, BW, WW. First run: black side. The probability of the other side is also black is 2/3. How? OK, let's count the ways this can happen:
+
+* There are three ways to produce 1 black side:
+  + Pr(1BlackSide) = 3/6
+
+* There are two ways to produce 2 black sides (warning: order matters!).
+  + Pr(2BlackSide) = 1/3
+
+OK, we can apply Bayes Rule once again.
+
+$$ 
+Pr(2BlackSide|1BlackSide) = \frac{Pr(1BlackSide|2BlackSide)*Pr(2BlackSide)}{Pr(1BlackSide)}
+$$ 
+Well, the first is obviously 1, and the second term is 1/3. The denominator is 1/2.
+
+```{r}
+
+(1 * 1/3) / 0.5
+
+```
+
+*But*, we can also simply count the ways in which all possibilities can happen. Think about the total number of times a black can come up. It is three. And now, think about the ways in which both sides can come up black. It is two. Thus, the answer is 2/3.
+
+**2M5**. We have four cards now: BB, BB, BW, WW. OK, this changes the number of possibilities.
+
+Let's count the times a black card can face up:
+
+| Cards | Ways |
+| :---: | :--: |
+| BB    | 2    |
+| BW    | 1    |
+| BB    | 2    |
+| WW    | 0    |
+
+So, both sides BB, given that there is at least one B is 4/5 = 0.8.
+
+Bayes will give you the same answer, too.
+
+**2M6**. We now have another condition: it is less likely to pick up a black card. We have three cards: BB, BW, WW. Let's count the ways.
+
+| Cards | Possible Weights | Priors      | Likelihoods |
+| :---: | :--------------: | :---------: | :---------: |
+| BB    | 2                | 1           | 2           |
+| BW    | 1                | 2           | 2           |
+| WW    | 0                | 3           | 0           |
+
+Pr(BB) = BB / (BB + BW) = 2 / (2 + 2) = 0.5.
+
+**2M7**. OK, same set-up, but we have now the second card with W on its side. We are gonna make some updating!
+
+If the first card is BB, there could be three ways for the second card to be White. If the first card is BW, there could be 2 ways for the second card to be white. The first count could not be WW, so we cross that possibility.
+
+| Cards | First Count | Second Count | New Count |
+| :---: | :---------: | :----------: | :-------: |
+| BB    | 2           | 3            | 2 x 3 = 6 |
+| BW    | 1           | 2            | 1 x 2 = 2 |
+| WW    | 0           | 0            | 0         |
+
+Out of 8 possibilities, 6 can be BB. Thus 6/8 = 0.75.
+
+## Hard Problems
+
+**2H1**. OK, let's go with the facts first:
+
+* Pr(SpeciesA) = 0.5.
+* Pr(SpeciesB) = 0.5.
+* Pr(Twins|SpeciesA) = 0.1.
+* Pr(Twins|SpeciesB) = 0.2.
+
+We want to understand the probability of the first birth being twins.
+
+$$
+P(Twins) = Pr(SpeciesA) * Pr(Twins|SpeciesA) + Pr(SpeciesB) * Pr(Twins|SpeciesB)
+$$ 
+
+So, the probability of first birth being twins is ``0.5*0.1 + 0.5*0.2 =`` **0.15**.
+
+OK, this is important. Why? We now have an information pertaining to which one of these species is more likely. After all, if Species A and B have different probabilities of giving birth to twins, the information that we have twins should update our prior belief.
+
+How? We now do not have to assume that Pr(SpeciesA) and Pr(SpeciesB) are 0.50. Let's update.
+
+$$
+Pr(SpeciesA|Twins) = \frac{Pr(Twins|SpeciesA)*Pr(SpeciesA)}{Pr(Twins)}
+\\
+Pr(SpeciesB|Twins) = \frac{Pr(Twins|SpeciesB)*Pr(SpeciesB)}{Pr(Twins)}
+$$ 
+Let's calculate our new probabilities.
+
+```{r}
+
+0.1*0.5/0.15 # New Pr for Species A
+0.2*0.5/0.15 # New Pr for Species B
+
+```
+
+We are now ready to calculate the probability that the second birth is also a twin using this new information.
+
+So, the probability of second birth being twins is ``1/3*0.1 + 2/3*0.2 =`` **0.16**.
+
+**2H2**. Same facts, same problems. We want to understand Pr(SpeciesA|Twins). 
+
+This is easy:
+
+$$
+Pr(SpeciesA|Twins) = \frac{Pr(Twins|SpeciesA)*Pr(SpeciesA)}{Pr(Twins)}
+$$
+Well, we know the answer is ``0.1 * 0.5 / 0.15 = 0.33``, or simply 1/3.
+
+**2H3**. We can pick up *after the first twin*, which, as you might remember, updated our priors. We now think that Pr(SpeciesA) is 1/3 and Pr(SpeciesB) is 2/3. The others (concerning twins) remain the same.
+
+The question asks if the second birth is **not** twins, what would be the chance that the panda is from Species A: Pr(SpeciesA|NoTwins).
+
+$$
+Pr(SpeciesA|NoTwins) = \frac{Pr(NoTwins|SpeciesA)*Pr(SpeciesA)}{Pr(NoTwins)}
+$$ 
+Well, this is easy. We know that NoTwins for SpeciesA is 0.90. We also know that Pr(SpeciesA) is 1/3. We knew before that Pr(Twins) is 0.15, which means that now Pr(NoTwins) is 0.85. Thus: ``0.9*(1/3) / 0.85 =`` **0.35** chance of being Species A. 
+
+**2H4**. We now have a test. Good. No end with these questions, huh? Let's go.
+
+* Pr(CorrectIdentification|SpeciesA) = 0.80.
+* Pr(CorrectIdentification|SpeciesB) = 0.65.
+
+First, let's ignore our previous calculations and just learn Pr(SpeciesA|CorrectIdentification).
+
+$$
+Pr(SpeciesA|CorrectIdentification) = \frac{Pr(CorrectIdentification|SpeciesA)*Pr(SpeciesA)}{Pr(CorrectIdentification)}
+$$ 
+We know the numerator (0.80*0.50), but not the denominator. Let's calculate it.
+
+```{r}
+
+0.80*0.50 + 0.65*0.30
+
+```
+
+59.5%. Meh. Barely better than random assignment. Let's put it into the equation and calculate the probability.
+
+```{r}
+
+0.80 * 0.50 / (0.80 * 0.50 + 0.65 * 0.30)
+
+```
+
+We see that the Pr(SpeciesA|CorrectIdentification) is **67%**.
+
+In the second part of the problem, we will use the birth data as well. I assume that we only know the first birth was twins. This previously updated our information as follows: 1/3 probability of being Species A, and 2/3 probability of being Species B. Let's put the numbers.
+
+```{r}
+
+0.80 * (1/3) / (0.80 * 0.50 + 0.65 * 0.30)
+
+```
+
+Now, the answer updated to **44%**.
+
+Thank you!

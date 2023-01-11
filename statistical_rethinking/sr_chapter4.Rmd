@@ -1,0 +1,440 @@
+---
+title: "Soc722 - SR Chapter 4"
+author: "Turgut Keskintürk"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: united
+    toc: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(out.width = "800px", dpi = 200, fig.align = "center")
+
+# load the relevant packages
+pacman::p_load(tidyverse, rethinking, tidybayes, tidybayes.rethinking, gridExtra, splines)
+theme_set(theme_bw()) # theme set for the plots
+
+```
+
+Hello there! Let's start with our exercises for McElreath's *Statistical Rethinking*, Chapter 4.
+
+# Easy Problems
+
+## 4E1
+
+The first line, $y_i \sim \text{Normal}(\mu, \sigma)$, is the *likelihood*, while the others are *priors*.
+
+## 4E2
+
+There are two parameters ($\mu, \sigma$) in the posterior distribution.
+
+## 4E3
+
+Here is the Bayes' theorem:
+
+$$
+Pr(\mu, \sigma | y) = \frac{\prod_{i}^{} Normal(y_i | \mu, \sigma)Normal(\mu|0, 10)Exponential(\sigma|1)}
+                 {\int \int \prod_{i}^{} Normal(y_i | \mu, \sigma)Normal(\mu|0, 10)Exponential(\sigma|1) d\mu d\sigma}
+$$
+
+## 4E4
+
+The second line, $\mu_i = \alpha + \beta x_i$, specifies the linear model. 
+
+## 4E5
+
+There are three parameters ($\alpha, \beta, \sigma$) in the posterior distribution. $\mu$ is not a parameter, because it is now directly tied to the linear function, which determines the value of $\mu$ deterministically.
+
+# Medium Problems
+
+## 4M1
+
+We are now going to create a prior predictive simulation. Let's generate the data with the specified priors and plot the results.
+
+```{r}
+
+# set seed
+set.seed(11235813)
+
+# generate the tibble
+d <- tibble(
+  sample_m = rnorm(n = 1e4, mean = 0, sd = 10),
+  sample_s = rexp(n = 1e4, rate = 1),
+  y = rnorm(n = 1e4, mean = sample_m, sd = sample_s),
+)
+
+#plot
+d %>%
+  ggplot(aes(x = y)) +
+  geom_density(fill = "steelblue") +
+  labs(x = "Y", y = "Density") +
+  xlim(-40, 40)
+
+```
+
+## 4M2
+
+Let's take the model above and translate it to the `quap` formula.
+
+```{r}
+
+# set seed
+set.seed(112358)
+
+# formula list
+q_formula <- alist(m = rnorm(1e4, 0, 10),
+                   s = rexp(1e4, 1),
+                   y = rnorm(1e4, m, sd))
+
+```
+
+This is it! We just wrap it around `alist`, which does not evaluate the functions but store them for use in `quap`.
+
+## 4M3
+
+We have a `quap` formula, let's turn it into a mathematical model:
+
+$$
+\begin{aligned}
+y_i &\sim \text{Normal}(\mu, \sigma) \\
+\mu &= \alpha + \beta x \\
+\alpha &\sim \text{Normal}(0, 10) \\
+\beta &\sim \text{Uniform}(0, 1) \\
+\sigma &\sim \text{Exponential}(1)
+\end{aligned}
+$$ 
+
+## 4M4
+
+Let's first think about the measures we have. We have a student's height, let's call it $height$, and year, let's call it $year$. We tie these two variables in the linear regression framework using a linear equation $height = \alpha + \beta*year$.
+
+Here is the mathematical expression of these relationships:
+
+$$
+\begin{aligned}
+height_i &\sim \text{Normal}(\mu, \sigma) \\
+\mu &= \alpha + \beta * year \\
+\alpha &\sim \text{Normal}(170, 20) \\
+\beta &\sim \text{LogNormal}(0, 1) \\
+\sigma &\sim \text{Exponential}(1)
+\end{aligned}
+$$ 
+It is plausible to assume that $height$ is normally distributed. The priors for the $\alpha$ is chosen simply because 170 cm is (apparently) the average height of students in the US, and a standard deviation of 20 is relatively large but not too large to allow many Hobbits or giants.
+
+I assumed a log normal distribution for $\beta$ to discard height shrinkage and allow small increases.
+
+The exponential distribution for $\sigma$ is meant to narrow large deviations, for the same reason as above in terms of Hobbits or giants.
+
+## 4M5
+
+Before coming to this question, I already incorporated this thinking to my prior for the parameter $\beta$!
+
+## 4M6
+
+We now know that the variance, or $\sigma^2$, should be equal or less than 64 cm. This will lead me to revise my prior for $\sigma$. The main distribution I used before (exponential) makes it very unlikely that high values occur, but it's still a theoretical possibility.
+
+We can have two things: (a) we can add an upper bound to the specification above, using a conditional function that takes values according to the specified ranges, or (b) we can change the exponential prior to a uniform prior ($\sigma \sim \text{Uniform}(0, 8)$).
+
+## 4M7
+
+We are going to fit two models, one with centered variables and one uncentered variables. Let's first set-up a few things.
+
+```{r}
+
+rm(list = ls()) # some clean-up
+data(Howell1)
+d <- Howell1
+d <- d %>%
+  filter(age >= 18) %>%
+  mutate(cweight = weight - mean(weight),
+         cheight = height - mean(height))
+
+```
+
+Cool! We are now going to use `quap` and fit two models.
+
+```{r}
+
+# set seed
+set.seed(11235813)
+
+# the model from the book, with centering
+m_ycent <- quap(alist(
+  height ~ dnorm(mu, sigma),
+  mu <- a + b * cweight,
+  a ~ dnorm(178, 20),
+  b ~ dlnorm(0, 1),
+  sigma ~ dunif(0, 50)
+),
+data = d)
+
+# the new model, without the centering, 
+m_ncent <- quap(alist(
+  height ~ dnorm(mu, sigma),
+  mu <- a + b * weight,
+  a ~ dnorm(178, 20),
+  b ~ dlnorm(0, 1),
+  sigma ~ dunif(0, 50)
+),
+data = d)
+
+```
+
+Nice, we have our models. Let's compare the posteriors of these two models with a bunch of cool information.
+
+```{r}
+
+# let's look at the precis
+precis(m_ycent)
+precis(m_ncent)
+
+```
+
+We see that $\beta$ values are nearly identical, but $\alpha$ changed. This is simply because, instead of estimating the average at $weight$, we now look at the $height$ when $weight$ is equal to 0.
+
+```{r}
+
+# variance-covariance matrices
+round(diag(vcov(m_ycent)), 3)
+round(diag(vcov(m_ncent)), 3)
+
+```
+
+Looking at the variances, we see that the variance of $\alpha$ changed drastically, now that we do not estimate it through centered X.
+
+```{r}
+
+# let's see the correlations among parameters
+round(cov2cor(vcov(m_ycent)), 3)
+round(cov2cor(vcov(m_ncent)), 3)
+
+```
+
+Finally, when we look at the correlations among parameters, we see that correlations were nearly 0 in the centered case, but when uncentered, we see a nearly full negative relationship between $\alpha$ and $\beta$.
+
+Let's now turn to the posterior predictions. First, draws:
+
+```{r}
+
+# posterior draws from the models
+
+draws_ycent <- tidy_draws(m_ycent, n = 100)
+draws_ncent <- tidy_draws(m_ncent, n = 100)
+
+# predicted draws from the models
+
+pdraw_ncent <- predicted_draws(m_ncent,
+                               newdata = d,
+                               draws = 1000) %>%
+  group_by(.row) %>%
+  mutate(lo_bound = HPDI(.prediction)[1],
+         up_bound = HPDI(.prediction)[2])
+
+pdraw_ycent <- predicted_draws(m_ycent,
+                               newdata = d,
+                               draws = 1000) %>%
+  group_by(.row) %>%
+  mutate(lo_bound = HPDI(.prediction)[1],
+         up_bound = HPDI(.prediction)[2])
+
+```
+
+Good! We are up and running. It is time to plot the posterior predictive plots of the two models and compare.
+
+```{r}
+
+# plot with no centering
+
+plot_ncenter <- ggplot(draws_ncent) +
+  geom_abline(aes(intercept = a, slope = b), alpha = .25) +
+  geom_point(
+    data = d,
+    mapping = aes(x = weight, y = height),
+    alpha = .2
+  ) +
+  labs(x = "Weight", y = "Height", title = "Plot with No Centering") +
+  geom_ribbon(
+    data = pdraw_ncent,
+    mapping = aes(x = weight,
+                  ymax = up_bound,
+                  ymin = lo_bound),
+    alpha = .1
+  ) +
+  labs(caption = "89% HDPI Overlaid")
+
+# plot with centering
+
+plot_wcenter <- ggplot(draws_ycent) +
+  geom_abline(aes(intercept = a, slope = b), alpha = .25) +
+  geom_point(
+    data = d,
+    mapping = aes(x = cweight, y = height),
+    alpha = .2
+  ) +
+  labs(x = "Weight", y = "Height", title = "Plot with Centering") +
+  geom_ribbon(
+    data = pdraw_ycent,
+    mapping = aes(x = cweight,
+                  ymax = up_bound,
+                  ymin = lo_bound),
+    alpha = .1
+  ) +
+  labs(caption = "89% HDPI Overlaid")
+
+grid.arrange(plot_ncenter, plot_wcenter, nrow = 1)
+
+```
+
+Neat! And well, slow...
+
+## 4M8
+
+OK, time for B-Splines. Let's clear the environment and load the data.
+
+```{r}
+
+rm(list = ls())
+data(cherry_blossoms)
+d <- cherry_blossoms %>%
+  drop_na(doy)
+rm(cherry_blossoms) # tidy the room
+precis(d)
+
+```
+
+Fine. I hate these kinds of data. As Werner Herzog says (not an exact quote), nature is not good, it is just meaningless agony.
+
+Since we are asked to play with the number of knots and the priors, I am going to create a small function for later use.
+
+```{r}
+
+cherry_weirdos <- function(num_knots, std_prior) {
+  # knots
+  knot_list <-
+    quantile(d$year, probs = seq(
+      from = 0,
+      to = 1,
+      length.out = num_knots
+    ))
+  
+  # basis functions
+  basis <-
+    bs(d$year,
+       knots = knot_list[-c(1, num_knots)],
+       degree = 3,
+       intercept = T)
+  
+  # quap fit
+  splines_fit <- quap(
+    alist(
+      D ~ dnorm(mu, sigma),
+      mu <- a + B %*% w,
+      a ~ dnorm(100, 10),
+      w ~ dnorm(0, sigma_value),
+      sigma ~ dexp(1)
+    ),
+    data = list(
+      D = d$doy,
+      B = basis,
+      sigma_value = std_prior
+    ),
+    start = list(w = rep(0, ncol(basis)))
+  )
+  
+  # intervals
+  intervals <- splines_fit %>%
+    link() %>% # I'm gonna use McElreath way here, simply because it's more simple
+    as_tibble() %>%
+    map_dfr(PI, prob = 0.97) %>%
+    add_column(year = d$year) %>%
+    left_join(d, by = "year") %>%
+    rename(low = `2%`, up = `98%`)
+  
+  # plot
+  ggplot(intervals,
+         aes(x = year, y = doy)) +
+    geom_point(col = "steelblue") +
+    geom_ribbon(aes(ymin = low,
+                    ymax = up)) +
+    labs(x = "Year", y = "Day")
+}
+
+```
+
+We are asked to change the number of knots. Here is a plot that shows that increasing the number of knots increases the "wiggly" (this is a scientific term!) nature of our data.
+
+```{r}
+
+wiggly_1 <- cherry_weirdos(15, 10)
+wiggly_2 <- cherry_weirdos(30, 10)
+wiggly_3 <- cherry_weirdos(60, 10)
+
+grid.arrange(wiggly_1, wiggly_2, wiggly_3, nrow = 1)
+
+```
+
+We are also asked to vary the standard deviation of the prior. Let's do that!
+
+```{r}
+
+wiggly_1 <- cherry_weirdos(15, 1)
+wiggly_2 <- cherry_weirdos(15, 10)
+wiggly_3 <- cherry_weirdos(15, 50)
+
+grid.arrange(wiggly_1, wiggly_2, wiggly_3, nrow = 1)
+
+```
+
+These are basically affecting the wiggly nature of the data!
+
+Neat!
+
+# Hard Problems
+
+Let's start with clean-ups and new directions.
+
+```{r}
+
+rm = list(ls())
+
+```
+
+## 4H1
+
+Let's go and create a tibble that we want to fill through modeling.
+
+```{r}
+
+d <- tibble(
+  individual = c(1, 2, 3, 4, 5),
+  weight = c(46.95, 43.72, 64.78, 32.59, 54.63),
+  expected_height = NA_real_,
+  interval_lo = NA_real_,
+  interval_up = NA_real_
+)
+
+```
+
+OK, let's load the data and fit the model just as before, so that we can find predicted values.
+
+```{r}
+
+data(Howell1)
+
+```
+
+## 4H2
+## 4H3
+## 4H4
+## 4H5
+## 4H6
+## 4H7
+## 4H8
+
+
+
+
+

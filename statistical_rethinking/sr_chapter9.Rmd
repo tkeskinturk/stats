@@ -1,0 +1,418 @@
+---
+title: "Soc722 - SR Chapter 9"
+author: "Turgut Keskintürk"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: united
+    toc: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(fig.align = "center")
+
+# load the relevant packages
+pacman::p_load(
+  tidyverse,
+  purrr,
+  rethinking,
+  rstan,
+  tidybayes,
+  tidybayes.rethinking,
+  modelsummary,
+  patchwork,
+  ggeffects,
+  hrbrthemes
+)
+theme_set(theme_ipsum_rc()) # theme set for the plots
+
+```
+
+Hello there! Let's start with our exercises for McElreath's *Statistical Rethinking*, Chapter 9.
+
+# Easy Problems
+
+## 9E1
+
+Here are the answers for the propositions:
+
+* The parameters do not have to be discrete. They can take continuous values as well.
+* The likelihood function does not have to be Gaussian. The whole point of the MCMC and its parent methods is to escape from normality.
+* Yes, this is a requirement. Metropolis algorithm is not smart enough to handle non-symmetric proposals.
+
+## 9E2
+
+The efficiency of the Gibbs algorithm arises from the fact that the proposals do not need to be "symmetric," but rather, as McElreath puts it, *adaptive*. This means that, rather than blindly following each proposal, Gibbs adapts its decisions, which in turn leads to fewer steps.
+
+The main problem of the Gibbs algorithm is that it becomes inefficient in high dimensional problems (the hill and dirt passage in page 269 was amazing!). This means that the algorithm can get stuck in regions of high correlation in the multivariate distribution.
+
+## 9E3
+
+The HMC can't handle discrete parameters. To understand this requires some calculus: the HMC works in continuous spaces through gradients, and since derivatives require smooth and continuous planes (or whatever dimension we have), discrete parameters are not possible.
+
+## 9E4
+
+The actual number of the sample is just the number of observations in our data frame. The effective number of samples, `n_eff`, is an estimate of how many independent samples are needed to achieve a non-auto-correlated sequence for estimating the posterior distribution.
+
+## 9E5
+
+If we are lucky enough, `Rhat` should be really close to 1. Note that this approximation comes from above.
+
+## 9E6
+
+There are three quality checks for a good Markov chain: stationarity (*technically*, no weird detours to weird places), the mean values being around similar points, and convergence, meaning that multiple chains converge on the same region.
+
+Let me just generate some random data to accommodate these facts and plot it:
+
+```{r, fig.width = 6, fig.height = 3, dpi = 500}
+
+tibble(
+  value1 = rnorm(1000, 0, 2),
+  value2 = rnorm(1000, 0, 2),
+  value3 = rnorm(1000, 0, 2),
+  value4 = rnorm(1000, 0, 2),
+  mcstep = c(1:1000)
+) %>% ggplot() +
+  geom_line(aes(x = mcstep, y = value1, group = 1),
+            size = 0.5,
+            col = "#F1BB7B") +
+  geom_line(aes(x = mcstep, y = value2, group = 1),
+            size = 0.5,
+            col = "#FD6467") +
+  geom_line(aes(x = mcstep, y = value3, group = 1),
+            size = 0.5,
+            col = "#5B1A18") +
+  geom_line(aes(x = mcstep, y = value4, group = 1),
+            size = 0.5,
+            col = "#D67236") +
+  labs(x = "Steps", y = "Sampling Value") +
+  theme_ipsum()
+
+```
+
+This is one hell of a healthy check! Let's change one healthy process (central tendency) to an unhealthy process and see what's going on:
+
+```{r, fig.width = 6, fig.height = 3, dpi = 500}
+
+tibble(
+  value1 = rnorm(1000, 0, 2),
+  value2 = rnorm(1000, 2, 2),
+  value3 = rnorm(1000, 4, 2),
+  value4 = rnorm(1000, 8, 2),
+  mcstep = c(1:1000)
+) %>% ggplot() +
+  geom_line(aes(x = mcstep, y = value1, group = 1),
+            size = 0.5,
+            col = "#F1BB7B") +
+  geom_line(aes(x = mcstep, y = value2, group = 1),
+            size = 0.5,
+            col = "#FD6467") +
+  geom_line(aes(x = mcstep, y = value3, group = 1),
+            size = 0.5,
+            col = "#5B1A18") +
+  geom_line(aes(x = mcstep, y = value4, group = 1),
+            size = 0.5,
+            col = "#D67236") +
+  labs(x = "Steps", y = "Sampling Value") +
+  theme_ipsum()
+
+```
+
+This is bad. The chains do not share a reasonable region with a shared center.
+
+## 9E7
+
+Let's go for the trank plots with the same measures that I tried above. I am going to provide the plots at once:
+
+```{r}
+
+# healthy
+tibble(
+  value1 = rnorm(1000, 0, 2),
+  value2 = rnorm(1000, 0, 2),
+  value3 = rnorm(1000, 0, 2),
+  value4 = rnorm(1000, 0, 2)
+) %>% pivot_longer(cols = everything(),
+                   names_to = "Chain",
+                   values_to = "Values") %>% mutate(
+                     Chain = case_when(
+                       Chain == "value1" ~ 1,
+                       Chain == "value2" ~ 2,
+                       Chain == "value3" ~ 3,
+                       Chain == "value4" ~ 4,
+                     )
+                   ) %>%
+  bayesplot::mcmc_rank_overlay(pars = vars(Values)) +
+  scale_color_manual(values = c("#F1BB7B", "#FD6467", "#5B1A18", "#D67236")) +
+  theme_ipsum() + ylim(25, 75)
+  
+# unhealthy
+tibble(
+  value1 = rnorm(1000, 0, 2),
+  value2 = rnorm(1000, 2, 2),
+  value3 = rnorm(1000, 4, 2),
+  value4 = rnorm(1000, 8, 2)
+) %>% pivot_longer(cols = everything(),
+                   names_to = "Chain",
+                   values_to = "Values") %>% mutate(
+                     Chain = case_when(
+                       Chain == "value1" ~ 1,
+                       Chain == "value2" ~ 2,
+                       Chain == "value3" ~ 3,
+                       Chain == "value4" ~ 4,
+                     )
+                   ) %>%
+  bayesplot::mcmc_rank_overlay(pars = vars(Values)) +
+  scale_color_manual(values = c("#F1BB7B", "#FD6467", "#5B1A18", "#D67236"))
+
+```
+
+As we can see, the trank plots show the acute problems even more clearly.
+
+# Medium Problems
+
+In all medium problems below, I will work with the terrain ruggedness data. Let me load it to the environment.
+
+```{r}
+
+data(rugged)
+d <- rugged %>%
+  select(africa = cont_africa, gdp = rgdppc_2000, rugged) %>%
+  drop_na() %>%
+  mutate(
+    africa = recode(africa, "0" = 2, "1" = 1),
+    gdp = log(gdp) / mean(log(gdp)),
+    rugged = rugged / max(rugged),
+    rugged = rugged - mean(rugged)
+  )
+rm(rugged) # clean up
+
+```
+
+I will use `Stan`, rather than `ulam`, to make these estimations. I will hopefully figure out how it works. Before going to the problems, let me estimate the model from the book for comparisons in the subsequent questions.
+
+```{r}
+
+rugged.fit <- rstan::stan(
+  model_code =
+  "
+  data{
+    vector[170] gdp;
+    vector[170] rugged;
+    int africa[170];
+  }
+  
+  parameters{
+    vector[2] a;
+    vector[2] b;
+    real<lower=0> sigma;
+  }
+
+  model{
+    vector[170] mu;
+    sigma ~ exponential(1);
+    b ~ normal(0, 0.3);
+    a ~ normal(1, 0.1);
+    for (i in 1:170) {
+      mu[i] = a[africa[i]] + b[africa[i]] * (rugged[i]);
+    }
+    gdp ~ normal(mu, sigma);
+  }
+  ",
+  data = d, chains = 4, warmup = 1000, iter = 2000, cores = 4, refresh = 0
+)
+
+```
+
+## 9M1
+
+In this first model iteration, we are asked to change the prior of sigma to a uniform prior. Let's fit the model first.
+
+```{r}
+
+rugged.fit.q1 <- rstan::stan(
+  model_code =
+  "
+  data{
+    vector[170] gdp;
+    vector[170] rugged;
+    int africa[170];
+  }
+  
+  parameters{
+    vector[2] a;
+    vector[2] b;
+    real<lower=0, upper=1> sigma;
+  }
+
+  model{
+    vector[170] mu;
+    sigma ~ uniform(0, 1);
+    b ~ normal(0, 0.3);
+    a ~ normal(1, 0.1);
+    for (i in 1:170) {
+      mu[i] = a[africa[i]] + b[africa[i]] * (rugged[i]);
+    }
+    gdp ~ normal(mu, sigma);
+  }
+  ",
+  data = d, chains = 4, warmup = 1000, iter = 2000, cores = 4, refresh = 0
+)
+
+```
+
+I am now going to plot the posterior draws together in one plot.
+
+```{r}
+
+draws <- tibble(m1 = extract(rugged.fit)$sigma,
+                m2 = extract(rugged.fit.q1)$sigma) %>%
+  pivot_longer(cols = everything(),
+               names_to = "Model", values_to = "Draws")
+
+ggplot(draws, aes(x = Draws, fill = Model)) +
+  geom_density(alpha = 0.75) +
+  scale_fill_manual(values = c("#F1BB7B", "#FD6467")) +
+  theme_ipsum() +
+  labs(x = "Draws", y = "Density") +
+  theme(legend.position = "top")
+  
+```
+
+As we can see, there is no detectable influence of changing the prior on the posterior distribution of $\sigma$. It seems that the number of data observations are so high that the specified priors are washed away when the model learns about the patterns.
+
+## 9M2
+
+Again, we are going to change certain priors. Let's fit the model once more.
+
+```{r}
+
+rugged.fit.q2 <- rstan::stan(
+  model_code =
+  "
+  data{
+    vector[170] gdp;
+    vector[170] rugged;
+    int africa[170];
+  }
+  
+  parameters{
+    vector[2] a;
+    vector[2] b;
+    real<lower=0> sigma;
+  }
+
+  model{
+    vector[170] mu;
+    sigma ~ exponential(1);
+    b ~ exponential(0.3);
+    a ~ normal(1, 0.1);
+    for (i in 1:170) {
+      mu[i] = a[africa[i]] + b[africa[i]] * (rugged[i]);
+    }
+    gdp ~ normal(mu, sigma);
+  }
+  ",
+  data = d, chains = 4, warmup = 1000, iter = 2000, cores = 4, refresh = 0
+)
+
+```
+
+Got a lot of warnings: both divergent transitions & low effective N. Let me first look at the trace plot to see what happened.
+
+```{r}
+
+traceplot(rugged.fit.q2, pars = c("b[1]", "b[2]")) +
+  scale_color_manual(values = c("#F1BB7B", "#FD6467", "#5B1A18", "#D67236")) +
+  theme_ipsum() + theme(legend.position = "top")
+   
+```
+
+Look at those chains for $b_2$, something is happening there!
+
+I am going to use the same procedure to compare the posterior distributions of $b$ across the original and updated models.
+
+```{r}
+
+draws <- tibble(m1 = extract(rugged.fit)$b[, 2],
+                m2 = extract(rugged.fit.q2)$b[, 2]) %>%
+  pivot_longer(cols = everything(),
+               names_to = "Model", values_to = "Draws")
+
+ggplot(draws, aes(x = Draws, fill = Model)) +
+  geom_density(alpha = 0.75) +
+  scale_fill_manual(values = c("#F1BB7B", "#FD6467")) +
+  theme_ipsum() +
+  labs(x = "Draws", y = "Density") +
+  theme(legend.position = "top")
+  
+```
+
+Wild! As we can see, the posterior distributions of $b_2$ are constrained to be above 0, which created a massive problem.
+
+## 9M3
+
+Again, I am going to use the `rugged` dataset. I am switching from `Stan` to `ulam` though, as it took too long for `Stan` to compile the models below. `ulam` takes less than `Stan`, so I am probably doing something wrong in terms of efficiency.
+
+A for-loop for different warm up values:
+
+```{r}
+
+n_eff <- list()
+loopfr <- 1
+
+# model fit
+fit <- ulam(alist(
+  gdp ~ dnorm(mu, sigma),
+  mu <- a[africa] + b[africa] * rugged,
+  a[africa] ~ dnorm(1, 0.1),
+  b[africa] ~ dnorm(0, 0.3),
+  sigma ~ dexp(1)
+  # gonna use just one chain to help for time constraints
+), data = d, chains = 1, iter = 500, messages = F, refresh = 0)
+
+for (k in seq(25, 150, by = 25)) {
+  new_fit <- ulam(fit, chains = 1, warmup = k, iter = 500, cores = 8, messages = F, refresh = 0)
+  n_eff[[loopfr]] <-
+    precis(new_fit, depth = 2) %>% as_tibble() %>% pull(n_eff)
+  loopfr <- loopfr + 1
+}
+
+```
+
+OK, let's plot the `n_eff` values retrieved from these estimations.
+
+```{r, fig.width = 12.5, fig.height = 2.5, dpi = 500}
+
+n_eff %>%
+  as_tibble(.name_repair = "universal") %>%
+  janitor::clean_names() %>%
+  mutate(parameters = c("a1", "a2", "b1", "b2", "sigma")) %>%
+  pivot_longer(cols = !parameters,
+               names_to = "Warmup",
+               values_to = "EffectiveN") %>%
+  mutate(
+    Warmup = case_when(
+      Warmup == "x1" ~ 25,
+      Warmup == "x2" ~ 50,
+      Warmup == "x3" ~ 75,
+      Warmup == "x4" ~ 100,
+      Warmup == "x5" ~ 125,
+      Warmup == "x6" ~ 150
+    )
+  ) %>%
+  mutate(Warmup = factor(Warmup, levels = c(25, 50, 75, 100, 125, 150))) %>%
+  ggplot(aes(x = Warmup, y = EffectiveN)) +
+  geom_line(aes(group = 1), linetype = "dashed") +
+  facet_wrap( ~ parameters, nrow = 1) +
+  theme_ipsum() +
+  labs(x = "Warmup N", y = "Effective N")
+
+```
+
+OK, what I see here in this plots is that, even with a warmup number of 25, the chains relatively converge on similar numbers (think about the actual sample size N = 170 when comparing the *y* axes of different warmup sessions).
+
+Thank you!

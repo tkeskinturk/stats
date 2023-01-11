@@ -1,0 +1,759 @@
+---
+title: "Soc722 - SR Chapter 5"
+author: "Turgut Keskintürk"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: united
+    toc: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(out.width = "800px", dpi = 200, fig.align = "center")
+
+# load the relevant packages
+pacman::p_load(tidyverse, rethinking, tidybayes, tidybayes.rethinking, dagitty, gridExtra)
+theme_set(theme_bw()) # theme set for the plots
+
+```
+
+Hello there! Let's start with our exercises for McElreath's *Statistical Rethinking*, Chapter 5.
+
+Before going on to the problems, here is a helper function for extracting coefficient. I modified it a bit, and thanks to Pablo!
+
+```{r}
+
+extract.coefs <- function(models) {
+  lapply(1:length(models), function(x) {
+    tbl <-
+      precis(models[[x]]) # mean and compatibility intervals
+    model <-
+      names(models)[x] # the name of the model
+    
+    tbl %>%
+      as_tibble() %>%
+      mutate(coef = rownames(tbl),
+             model = model) %>%
+      relocate(model, coef)
+  })
+}
+
+```
+
+
+# Easy Problems
+
+## 5E1
+
+Multiple regression necessitates that, in the model, we have at least two independent variables.
+
+The responses are **(2)** and **(4)**. (2), as it includes variables $x_i$ and $z_i$, and (4), as it, again, includes variables $x_i$ and $z_i$. The fact that we do not have an intercept in (2) does not have an effect. We can easily constrain the intercept to be 0 in any model.
+
+## 5E2
+
+Let's first go over the notation: let's call animal diversity $D$, latitude $L$, and plant diversity $P$. 
+
+I can then state the model as follows:
+
+$$
+D_i \sim \text{Normal}(\mu_i, \sigma)
+\\
+\mu_i = \alpha + \beta L_i + \gamma P_i
+$$.
+
+## 5E3
+
+Just as in the previous question, let's first notate our terms: let's call amount of funding $F$, size of laboratory $L$, and time to PhD $P$. 
+
+The definition tells us that in a single regression setting, the relation of $F$ to $P$ and $L$ to $P$ is weak, but when we take into account both variables in one model, they become strongly positive. I thus first state the model: 
+
+$$
+P_i \sim \text{Normal}(\mu_i, \sigma)
+\\
+P_i = \alpha + \beta F_i + \gamma S_i
+$$.
+
+Each slope parameter are positive, so they should be on the **right** side of zero.
+
+## 5E4
+
+OK, we have a categorical variable with 4 levels: A, B, C, and D. We also have several indicator variables $A_i$, $B_i$, $C_i$, and $D_i$. We are looking for *inferentially equivalent models* (definitely gonna use this statement LOL) in a set of linear models.
+
+First things first: whether we use the indicator form or the index form, we are awarded with a free parameter with categorical variables.
+
+This means that a reference category (no matter which one it is) should basically represent the intercept, and should not overtly be included in the model specification. In the old Stata parlance, the said variable or level would be *dropped*.
+
+Thus, **(1)** and **(3)** are apparently equivalent, $\alpha$ just assumes the role of the reference category. 
+
+We also see that intercepts ($\alpha$) are constrained to be 0 in several other models, **(4)** and **(5)**. Since we do not have the free parameter, we should specify the reference category explicitly, which is the case here. They are thus also equivalent to (1) and (3).
+
+# Medium Problems
+
+## 5M1
+
+Inventing data! Sounds fun. We want a spurious relationship. I'm gonna have three variables, $x$, $z$, and $y$. I am going to assume that we are trying to model $y$, and $x$ and $z$ are the independent variables. Let's go.
+
+```{r}
+
+# beloved Fibonacci seeds
+
+set.seed(112358)
+
+# our simulated spurious relationship
+
+d <- tibble(x = rnorm(100),
+            y = rnorm(100,-x),
+            z = rnorm(100, x))
+```
+
+Cool! Here is what I did: I created an $x$ variable, and tied $y$ and $z$ to this $x$. However, there is no implicit connection between $y$ and $z$ here. If we wanted to draw a DAG, there will be no relation between $y$ and $z$, but not adjusting for $x$ would create a relation!
+
+Let's fit the models to see this more clearly.
+
+```{r}
+
+## single regression on x
+
+m1 <- quap(
+  alist(y ~ dnorm(mu, sigma),
+        mu <- a + bA * x,
+        a ~ dnorm(0, 0.2),
+        bA ~ dnorm(0, 0.5),
+        sigma ~ dexp(1)),
+  data = d)
+
+## single regression on z
+
+m2 <- quap(
+  alist(y ~ dnorm(mu, sigma),
+        mu <- a + bB * z,
+        a ~ dnorm(0, 0.2),
+        bB ~ dnorm(0, 0.5),
+        sigma ~ dexp(1)),
+  data = d)
+
+## multiple regression on x and z
+
+m3 <- quap(
+  alist(y ~ dnorm(mu, sigma),
+        mu <- a + bA * x + bB * z,
+        a ~ dnorm(0, 0.2),
+        bA ~ dnorm(0, 0.5),
+        bB ~ dnorm(0, 0.5),
+        sigma ~ dexp(1)),
+  data = d)
+
+```
+
+We fitted the models. Let's now plot them to see the relationships more clearly.
+
+```{r, fig.height = 2.5, fig.width = 7.5, units = "ins"}
+
+# let's prepare the data for model plots
+
+modellist <- list(model_1 = m1,
+                  model_2 = m2,
+                  model_3 = m3)
+modelcoef <- extract.coefs(modellist) %>% 
+  bind_rows() %>%
+  janitor::clean_names() # thanks to Steve!
+
+# plot the model coefficients
+
+modelcoef %>%
+  mutate(coef = factor(coef, levels = c("sigma", "bB", "bA", "a"))) %>%
+  ggplot(aes(x = mean, 
+             y = coef,
+             xmin = x5_5_percent,
+             xmax = x94_5_percent)) +
+  geom_point(size = 1.5) +
+  geom_linerange(size = 0.75) +
+  geom_vline(
+    aes(xintercept = 0),
+    size = 0.5,
+    linetype = "dotted",
+    color = "black"
+  ) +
+  labs(x = "Estimates", y = "Parameters") +
+  facet_wrap(~ model, nrow = 1)
+
+```
+
+As we can see, the parameter for $z$ become highly uncertain and not related to $y$ in Model 3, after accounting for $x$.
+
+## 5M2
+
+We will now create a masked relationship, so much so that an outcome variable, $y$, will be correlated positively with $x$ and negatively with $z$. We will also assume that $x$ and $z$ are correlated with each other as well. Let's write some code with this!
+
+```{r}
+
+# beloved Fibonacci seeds
+
+set.seed(1123581321)
+
+# our simulated masked relationship
+
+d <- tibble(x = rnorm(100),
+            z = rnorm(100, x),
+            y = rnorm(100, z-x))
+
+```
+
+Good! We have our dataset at hand. Let's plot their relationships with three scatterplots below to see what's going on.
+
+```{r, fig.height = 2.5, fig.width = 7.5, units = "ins"}
+
+p1 <- d %>%
+  ggplot(aes(x = x, y = y)) +
+  geom_point() +
+  labs(title = "X and Y", x = "X", y = "Y") +
+  geom_smooth(se = F, col = "black", method = 'lm', formula = y~x) +
+  theme_minimal()
+
+p2 <- d %>%
+  ggplot(aes(x = z, y = y)) +
+  geom_point() +
+  labs(title = "Z and Y", x = "Z", y = "Y") +
+  geom_smooth(se = F, col = "black", method = 'lm', formula = y~x) +
+  theme_minimal()
+
+p3 <- d %>%
+  ggplot(aes(x = x, y = z)) +
+  geom_point() +
+  labs(title = "X and Z", x = "X", y = "Z") +
+  geom_smooth(se = F, col = "black", method = 'lm', formula = y~x) +
+  theme_minimal()
+
+grid.arrange(p1, p2, p3, nrow = 1)
+
+```
+
+The graphs show bivariate relationships, but we **know** that there are different relationships going on, and the fact that these three variables are highly correlated necessitates a multiple regression framework. Let's build our model.
+
+```{r, fig.height = 2.5, fig.width = 5, units = "ins"}
+
+## multiple regression of y on x and z
+
+m_masked <- quap(
+  alist(y ~ dnorm(mu, sigma),
+        mu <- a + bA * x + bB * z,
+        a ~ dnorm(0, 0.2),
+        bA ~ dnorm(0, 0.5),
+        bB ~ dnorm(0, 0.5),
+        sigma ~ dexp(1)),
+  data = d)
+
+# let's prepare the data for model plots
+
+modellist <- list(m_masked)
+modelcoef <- extract.coefs(modellist) %>% 
+  bind_rows() %>%
+  janitor::clean_names()
+
+# plot the model coefficients
+modelcoef %>%
+  ggplot(aes(x = mean, 
+             y = reorder(coef, c(4, 3, 2, 1)),
+             xmin = x5_5_percent,
+             xmax = x94_5_percent)) +
+  geom_point(size = 1.5) +
+  geom_linerange(size = 0.75) +
+  geom_vline(
+    aes(xintercept = 0),
+    size = 0.5,
+    linetype = "dotted",
+    color = "black"
+  ) +
+  labs(x = "Estimates", y = "Parameters")
+
+```
+
+As we can see, parameters of $x$ and $z$ are in opposite sides of 0, which means that their relation to $y$ are in opposite directions.
+
+## 5M3
+
+Well, high divorce rates (D) can increase re-marriages (R), which means higher marriage (M). We can first test D --> M, and then use multiple regression to evaluate D + R --> M. If the coefficient of D decreases, then it means R mediates this causal link.
+
+## 5M4
+
+We will use the Waffle Divorce data for this example. Exciting! Let's load the data frame.
+
+```{r}
+
+data(WaffleDivorce)
+d <- WaffleDivorce
+
+```
+
+Well, I need to find the data for the LDS population for each state. Less exciting! Fortunately, a simple Google helped me!
+
+```{r}
+
+d$LDS <- c(
+  0.0077, 0.0453, 0.0610, 0.0104, 0.0194, 
+  0.0270, 0.0044, 0.0057, 0.0041, 0.0075, 
+  0.0082, 0.0520, 0.2623, 0.0045, 0.0067, 
+  0.0090, 0.0130, 0.0079, 0.0064, 0.0082, 
+  0.0072, 0.0040, 0.0045, 0.0059, 0.0073, 
+  0.0116, 0.0480, 0.0130, 0.0065, 0.0037, 
+  0.0333, 0.0041, 0.0084, 0.0149, 0.0053, 
+  0.0122, 0.0372, 0.0040, 0.0039, 0.0081, 
+  0.0122, 0.0076, 0.0125, 0.6739, 0.0074, 
+  0.0113, 0.0390, 0.0093, 0.0046, 0.1161
+  )
+
+ggplot(d, aes(LDS)) +
+  geom_histogram(col = "black", fill = "white") +
+  labs(x = "% LDS", y = "Count")
+
+```
+
+Huh! The data is highly skewed. I was planning to use the standardized versions of `LDS`, `Divorce`, `Marriage`, and `MedianAgeMarriage` directly, but first I am going to take the natural logarithm of LDS to make it more comprehensible for the analyses.
+
+```{r}
+
+d <- d %>%
+  mutate(LDS = log(LDS)) %>%
+  mutate(across(c(LDS, Divorce, Marriage, MedianAgeMarriage),
+         ~ ((.x - mean(.x)) / sd(.))))
+
+```
+
+OK, it is now time to fit our model and plot the coefficient estimates.
+
+```{r, fig.height = 2.5, fig.width = 5, units = "ins"}
+
+## multiple regression of y on x and z
+
+m_waffles <- quap(
+  alist(Divorce ~ dnorm(mu, sigma),
+        mu <- a + b1 * Marriage + b2 * MedianAgeMarriage + b3 * LDS,
+        a ~ dnorm(10, 2),
+        b1 ~ dnorm(0, 0.5),
+        b2 ~ dnorm(0, 0.5),
+        b3 ~ dnorm(0, 0.5),
+        sigma ~ dexp(1)),
+  data = d)
+
+# let's prepare the data for model plots
+
+modellist <- list(m_waffles)
+modelcoef <- extract.coefs(modellist) %>% 
+  bind_rows() %>%
+  janitor::clean_names()
+
+# plot the model coefficients
+modelcoef %>%
+  ggplot(aes(x = mean, 
+             y = reorder(coef, c(5, 4, 3, 2, 1)),
+             xmin = x5_5_percent,
+             xmax = x94_5_percent)) +
+  geom_point(size = 1.5) +
+  geom_linerange(size = 0.75) +
+  geom_vline(
+    aes(xintercept = 0),
+    size = 0.5,
+    linetype = "dotted",
+    color = "black"
+  ) +
+  labs(x = "Estimates", y = "Parameters") +
+  xlim(-1, 1)
+
+```
+
+We see that the parameters $b_2$ and $b_3$ are negative, and relatively precise. This means that, along with the Median Age at Marriage, the % LDS has a strong and negative effect on the divorce rate across the states.
+
+## 5M5
+
+As usual, let's first start with the notation: $G$ for gasoline price and $O$ for obesity.
+
+Let's also define our units. Just as in the previous example, I am going to work with the US states. Suppose that we have a data that include state-level average gasoline price $G$ and the state-level $O$ for obesity (be ready for some yikes of ecological fallacy, Nico!).
+
+We also need two variables for the two mechanisms: mean driving time $T$ and weekly average of restaurant visits $R$.
+
+When we include intervening variables in the multiple regression framework, we want that the main effect that we observe ($G$ --> $O$) is to be mediated (either reduced to 0 or significantly reduced to some degree), so much so that the mechanisms would explain the relationship.
+
+Here is the multiple regression steps that I'd like to propose:
+
+Step 1:
+
+$$
+O \sim \text{Normal}(\mu, sigma)
+\\
+\mu_i = \alpha + \beta_1G_i
+$$
+
+Step 2:
+
+$$
+O \sim \text{Normal}(\mu, sigma)
+\\
+\mu_i = \alpha + \beta_1G_i + \beta_2T_i + \beta_3R_i
+$$
+
+If we see a relationship in Step 1, and that relationship is reduced (and parameters $B_2$ and $B_3$ become predictive), we might be right!
+
+But we should not be lazy and just work with averages if we want to explain individual relationships.
+
+# Hard Problems
+
+Splendid: we get to draw some DAGs! Just watched the 7th episode of House of the Dragon, though, may be that's why I'm happy.
+
+## 5H1
+
+Let's draw the DAG and see its implied conditional independencies.
+
+```{r}
+
+dag.1 <- dagitty("dag{M -> A -> D}")
+coordinates(dag.1) <- list(x = c(M = 0, A = 1, D = 2),
+                           y = c(M = 0, A = 1, D = 0))
+drawdag(dag.1)
+impliedConditionalIndependencies(dag.1)
+
+```
+
+D and M are orthogonal, conditional on A. And this makes sense. There is no direct path from M to D, but only one that goes through A.
+
+## 5H2
+
+We are going to assume the previous relationship for the marriage example, where there is a tractable path from M to A to D.
+
+```{r}
+
+rm(list = ls())
+
+data(WaffleDivorce)
+d <- WaffleDivorce %>%
+  select(Marriage, Divorce, MedianAgeMarriage)
+d_std <- d %>%
+  mutate(across(everything(),
+         ~ ((.x) - mean(.x)) / sd(.x)))
+rm(WaffleDivorce)
+
+```
+
+Let's fit the model now.
+
+```{r}
+
+m_flist <- 
+  alist(
+    # model 1
+    MedianAgeMarriage ~ dnorm(mu1, sigma1),
+    mu1 <- a1 + b1 * Marriage,
+    a1 ~ dnorm(0, 0.2),
+    b1 ~ dnorm(0, 0.5),
+    sigma1 ~ dexp(1),
+    
+    # model 2
+    Divorce ~ dnorm(mu2, sigma2),
+    mu2 <- a2 + b2 * MedianAgeMarriage,
+    a2 ~ dnorm(0, 0.2),
+    b2 ~ dnorm(0, 0.5),
+    sigma2 ~ dexp(1)
+  )
+  
+m <- quap(m_flist, data = d_std)
+
+m_coefs <- precis(m) %>% janitor::clean_names()
+m_coefs
+
+```
+
+Let's get draws from the posterior.
+
+```{r}
+
+draws <- tidy_draws(m, n = 1e4) %>%
+  janitor::clean_names() %>%
+  select(-chain, -iteration)
+
+head(draws)
+
+```
+
+We have the posterior draws. Note to myself: these are basically different parameter estimates! We could easily plot this data.
+
+```{r}
+
+draws %>%
+  pivot_longer(cols = c(a1, a2, b1, b2, sigma1, sigma2),
+               names_to = "terms",
+               values_to = "draws") %>%
+  group_by(terms) %>%
+  ggplot(aes(x = draws, fill = terms)) +
+  geom_density() +
+  facet_wrap(~ terms, nrow = 2, scales = "free") +
+  theme(legend.position = "none") +
+  labs(x = "Draws", y = "Density")
+
+```
+
+Alright. Let's go for the counterfactual. We would like to understand the effect of halving the marriage rate of a state on divorce.
+
+There will be one intervention, which is to reduce the marriage rate by 1/2. This will require two steps: first, we are going to simulate the effect of M on A, and then, using this information, we are going to change the results for D.
+
+Let's do the data work.
+
+```{r}
+
+draws <- draws %>%
+  mutate(
+    Marriage_Treatment = 
+      rnorm(nrow(draws), mean(d$Marriage / 2), sd(d$Marriage / 2)),
+    MedianAgeMarriage_Treatment =
+      rnorm(nrow(draws), a1 + b1 * Marriage_Treatment, sigma1),
+    Divorces_Treatment =
+      rnorm(nrow(draws), a2 + b2 * MedianAgeMarriage_Treatment, sigma2),
+    Divorces_ControlDR =
+      rnorm(nrow(draws), mean(d$Divorce), sd(d$Divorce))
+  ) %>%
+  mutate(
+    difference = Divorces_Treatment - Divorces_ControlDR
+  )
+
+```
+
+Let's plot the effects of halving marriage rate on divorce rate.
+
+```{r}
+
+draws %>%
+  ggplot(aes(x = difference)) +
+  geom_density() +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
+  labs(x = "Counterfactual Change", y = "Density")
+
+```
+
+It seems that, for the majority of the cases, decreasing marriage by half decreases divorce rate a lot!
+
+And here is the effect size, on average:
+
+```{r}
+
+draws_novar <- draws %>%
+  mutate(
+    Marriage_Treatment = 
+      rnorm(nrow(draws), mean(d$Marriage / 2), 0),
+    MedianAgeMarriage_Treatment =
+      rnorm(nrow(draws), a1 + b1 * Marriage_Treatment, 0),
+    Divorces_Treatment =
+      rnorm(nrow(draws), a2 + b2 * MedianAgeMarriage_Treatment, 0),
+    Divorces_ControlDR =
+      rnorm(nrow(draws), mean(d$Divorce), 0)
+  ) %>%
+  mutate(
+    difference = Divorces_Treatment - Divorces_ControlDR
+  )
+
+# plot
+
+draws_novar %>%
+  ggplot(aes(x = difference)) +
+  geom_density() +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
+  labs(x = "Counterfactual Change", y = "Density")
+
+```
+
+This was challenging! Hopefully rewarding, though. If there is any error, I'd like to talk with you, Nico!
+
+## 5H3
+
+Going to another example. Let's load the data and clean.
+
+```{r}
+
+rm(list = ls())
+
+data(milk)
+d <- milk %>%
+  rename(M = mass, N = neocortex.perc, K = kcal.per.g) %>%
+  select(M, N, K) %>%
+  drop_na() %>%
+  mutate(M = log(M))
+
+d_std <- d %>% 
+  mutate(across(everything(),
+                ~ ((.x) - mean(.x)) / sd(.x)))
+rm(milk)
+
+```
+
+And let's fit the model.
+
+```{r}
+
+m_flist <- 
+  alist(
+    # model 1
+    N ~ dnorm(mu1, sigma1),
+    mu1 <- a1 + b1 * M,
+    a1 ~ dnorm(0, 0.2),
+    b1 ~ dnorm(0, 0.5),
+    sigma1 ~ dexp(1),
+    
+    # model 2
+    K ~ dnorm(mu2, sigma2),
+    mu2 <- a2 + b2 * M + b3 * N,
+    a2 ~ dnorm(0, 0.2),
+    b2 ~ dnorm(0, 0.5),
+    b3 ~ dnorm(0, 0.5),
+    sigma2 ~ dexp(1)
+  )
+  
+m <- quap(m_flist, data = d_std)
+
+m_coefs <- precis(m) %>% janitor::clean_names()
+m_coefs
+
+```
+
+We are now interested in understanding the counterfactual effect of doubling M on K. There are two paths to take into account: the direct effect of M on K, and the indirect effect of M on K through K. Let's draw and try to navigate this relationship.
+
+```{r}
+
+draws <- tidy_draws(m, n = 1e4) %>%
+  janitor::clean_names() %>%
+  select(-chain, -iteration)
+
+```
+
+Draws are OK. We are now going to try to have model predictions.
+
+```{r}
+
+draws <- draws %>%
+  mutate(
+    M_Treatment = 
+      rnorm(nrow(draws), mean(d$M * 2), sd(d$M * 2)),
+    N_Treatment =
+      rnorm(nrow(draws), a1 + b1 * M_Treatment, sigma1),
+    K =
+      rnorm(nrow(draws), a2 + b2 * M_Treatment + b3 * N_Treatment, sigma2),
+    K_Control =
+      rnorm(nrow(draws), mean(d$K), sd(d$K))
+  ) %>%
+  mutate(
+    difference = K - K_Control
+  )
+
+draws_novar <- draws %>%
+  mutate(
+    M_Treatment = 
+      rnorm(nrow(draws), mean(d$M * 2), 0),
+    N_Treatment =
+      rnorm(nrow(draws), a1 + b1 * M_Treatment, 0),
+    K =
+      rnorm(nrow(draws), a2 + b2 * M_Treatment + b3 * N_Treatment, 0),
+    K_Control =
+      rnorm(nrow(draws), mean(d$K), 0)
+  ) %>%
+  mutate(
+    difference = K - K_Control
+  )
+
+```
+
+And let's plot.
+
+```{r}
+
+# plot 1
+
+draws %>%
+  ggplot(aes(x = difference)) +
+  geom_density() +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
+  labs(x = "Counterfactual Change", y = "Density")
+
+# plot 2
+
+draws_novar %>%
+  ggplot(aes(x = difference)) +
+  geom_density() +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
+  labs(x = "Counterfactual Change", y = "Density")
+
+```
+
+Yes! Multiplying M by 2 results in a decrease in K for the majority of the cases, and this holds as negative on average.
+
+## 5H4
+
+Returning to the `Divorce` example. Let's start again.
+
+```{r}
+
+rm(list = ls())
+
+data(WaffleDivorce)
+d <- WaffleDivorce %>%
+  select(Marriage, Divorce, MedianAgeMarriage, South) %>%
+  rename(M = Marriage,
+         D = Divorce,
+         A = MedianAgeMarriage,
+         S = South)
+rm(WaffleDivorce)
+d <- d %>%
+  mutate_at(c("M", "D", "A"),
+            ~ (.x - mean(.x)) / sd(.x))
+
+```
+
+OK, I feel that `South` affects the `MedianAgeMarriage`, which in turn affects the `Divorce`. Here is a potential DAG:
+
+```{r}
+
+dag.south <- dagitty("dag{A -> M -> D
+                          A -> D
+                          S -> A
+                          S -> M}")
+coordinates(dag.south) <- 
+  list(x = c(M = 0, A = 1, S = 1, D = 2),
+       y = c(M = 0, A = 1, S = 2, D = 0))
+drawdag(dag.south)
+impliedConditionalIndependencies(dag.south)
+
+```
+
+OK, this tells us that if we know $A$ and $M$, the relationship between $D$ and $S$ would become orthogonal. Let's fit two models to test it.
+
+```{r}
+
+m1 <- quap(
+  alist(D ~ dnorm(mu, sigma),
+        mu <- a + b1 * S,
+        a ~ dnorm(0, 0.2),
+        b1 ~ dnorm(0, 0.5),
+        sigma ~ dexp(1)),
+  data = d)
+
+m2 <- quap(
+  alist(D ~ dnorm(mu, sigma),
+        mu <- a + b1 * S + b2 * A + b3 * M,
+        a ~ dnorm(0, 0.2),
+        b1 ~ dnorm(0, 0.5),
+        b2 ~ dnorm(0, 0.5),
+        b3 ~ dnorm(0, 0.5),
+        sigma ~ dexp(1)),
+  data = d)
+
+```
+
+OK, we fitted our models. I now expect $b_1$ to be "significant" in Model 1 and "non-significant" in Model 2. Let's look at the outcomes.
+
+```{r}
+
+precis(m1)
+precis(m2)
+
+```
+
+The prediction somewhat occurred. See the change in coefficients for $b_1$. However, $A$ and $M$ did not completely mediate it, so we need an alternative account for the causal DAG to fully capture the relationships.
+
+Thank you!

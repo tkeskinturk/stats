@@ -1,0 +1,139 @@
+---
+title: "Soc722 - MD Chapter 4"
+author: "Turgut Keskintürk"
+date: '2022-09-07'
+output:
+  html_document:
+    theme: united
+    toc: true
+    number_sections: true
+    keep_md: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Hello there! Let's start with our exercises for Chapter 4.
+
+# Set-Up
+
+First, we will begin with loading the tidyverse package (thanks to the beloved Hadley).
+
+```{r}
+
+# loading the tidyverse package
+library(tidyverse)
+
+```
+
+# Responses to Questions
+
+Nice, let's start.
+
+## Question 1
+
+Let's load the NFL salaries data through the Web.
+
+```{r}
+
+df <- read_csv(
+  "https://raw.githubusercontent.com/NicolasRestrep/223_course/main/Data/nfl_salaries.csv"
+)
+
+# never forget
+glimpse(df)
+
+```
+
+We have the data! I am not sure if those millions will look nice on the graphs, but we'll think of something.
+
+## Question 2
+
+Let's turn this dataset into the tidy format.
+
+```{r}
+
+df <- df %>%
+  pivot_longer(
+    cols = -year, names_to = "position", values_to = "salary"
+  )
+
+```
+
+## Question 3
+
+OK, we now have the dataset with the tidy format. Let's look at the salaries of quarterbacks.
+
+```{r}
+
+# filter the dataset
+df_quarters <- df %>%
+  filter(position == "Quarterback")
+
+# let's make a histogram for each year
+df_quarters %>%
+  drop_na() %>% # some NAs
+  ggplot(aes(x = salary/1000000)) + # to avoid the ugly x-axis (though I kinda like the scientific notation)
+  geom_histogram(fill = "steelblue", color = "white") +
+  theme_bw() +
+  labs(
+    title = "Salary Distributions of Quarterbacks", 
+    x = "Salaries (in Millions)", y = "# of Players") +
+  facet_wrap(~ year, nrow = 2)
+
+```
+
+We see a right-skewed distribution in all years, meaning that some players make a lot more than the average players in the dataset. In 2018, though, we have one salary that's astronomical even compared to the previous years.
+
+## Question 4
+
+Now, we are going to look at the average salaries for each year and position. Let's go.
+
+```{r}
+
+average_salaries <- df %>%
+  group_by(year, position) %>%
+  summarise(mean = mean(salary, na.rm = TRUE))
+
+# a glimpse to the dataset
+average_salaries %>% head()
+
+```
+
+## Question 5
+
+Now, we are going to create a linegraph to trace the evolution of salaries for each position.
+
+I am going to use two different graphs. First, I am going to construct a linegraph that distinguishes different positions through different lines. I am not a fan of these plots, though. Thus, secondly, I am going to create linegraphs faceted by position.
+
+```{r}
+
+average_salaries %>%
+  ggplot(aes(x = year, y = (mean/1000000), group = position, col = position)) +
+  geom_line() +
+  theme_bw() +
+  labs(
+    title = "Change in Average Salaries in Positions",
+    x = "Year", y = "Average Salaries (in Millions)")
+
+```
+
+OK, our first trend is that there is a relative increase in the salaries of nearly all positions, but the rank ordering of the positions is relatively stable across these years (even though there are small hiccups here and there).
+
+```{r}
+
+average_salaries %>%
+  ggplot(aes(x = year, y = (mean/1000000))) +
+  geom_line() +
+  theme_bw() +
+  labs(
+    title = "Change in Average Salaries in Positions",
+    x = "Year", y = "Average Salaries (in Millions)") +
+  facet_wrap(~ position, nrow = 2)
+
+```
+
+Second, we see that even though much of the positions went through a salary hike, *Running Back* and *Special Teamer* has not increased much at all, at least compared to the increase in other positions.
+
+Thank you!

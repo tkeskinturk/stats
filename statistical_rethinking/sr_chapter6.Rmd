@@ -1,0 +1,791 @@
+---
+title: "Soc722 - SR Chapter 6"
+author: "Turgut Keskintürk"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: united
+    toc: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(fig.align = "center")
+
+# load the relevant packages
+pacman::p_load(tidyverse, rethinking, tidybayes, tidybayes.rethinking, dagitty, gridExtra)
+theme_set(theme_bw()) # theme set for the plots
+
+```
+
+Hello there! Let's start with our exercises for McElreath's *Statistical Rethinking*, Chapter 6.
+
+# Easy Problems
+
+## 5E1
+
+Here are the three central mechanisms for false inferences:
+
+* *Multicollinearity*, where the conditional associations among two or more variables are high to produce reliable interpretations.
+* *Post-Treatment Bias*, which occurs when we control the consequences of a treatment, leaving the treatment no true variation to explain.
+* *Collider Bias*, which occurs when we open up a path in the DAG that is actually close, which in turn creates spurious correlations.
+
+## 5E2
+
+Well, my research suffers from no such treacheries, Mr. McElreath, but I will give you an example:
+
+Suppose that we want to explain the cultural transmission from institutional channels, where a religious authority $R$ influences a parent $P$, who in turn influences their child $C$, or $R$ influences $C$ directly.
+
+However, the values of $P$ and $C$ can be affected by their household environment $H$, which is not shared by the $R$.
+
+```{r, fig.width = 5, fig.height = 3, res = 500}
+
+dag.example <- dagitty("dag{H [unobserved]
+       R -> P -> C
+       R -> C
+       H -> P
+       H -> C}")
+coordinates(dag.example) <- list(
+  x = c(R = 0, P = 1, C = 1, H = 2),
+  y = c(R = 0, P = 0, C = 2, H = 1)
+)
+drawdag(dag.example)
+
+```
+
+As you might notice, this example is a rework of the one we saw as the Grandparent-Parent-Child example. Conditioning on $P$ thus will bias the relation between $R$ and $C$ by opening the path for $H$ to intervene, which in turn creates a collider bias.
+
+This set-up (as we'll see below) applies to many sampling issues as well (think of non-responses, list-wise deletion, etc.).
+
+## 5E3
+
+I will list the four elemental confounds. What a name, though?
+
+* **The Fork**, where a variable $Z$ is a common cause of both $X$ and $Y$. 
+
+```{r, fig.width = 3, fig.height = 1.5, res = 500}
+
+dag.fork <- dagitty("dag{
+       Z -> X
+       Z -> Y}")
+coordinates(dag.fork) <- list(
+  x = c(X = 0, Y = 2, Z = 1),
+  y = c(X = 0, Y = 0, Z = 1)
+)
+drawdag(dag.fork)
+impliedConditionalIndependencies(dag.fork)
+
+```
+
+As we see, conditioning on $Z$ makes $X$ and $Y$ orthogonal, as it blocks the non-causal path between these two variables.
+
+* **The Pipe**, where a middle variable $Z$ connects $X$ to $Y$, and if we condition on $Z$, it will block this path.
+
+```{r, fig.width = 3, fig.height = 1.5, res = 500}
+
+dag.pipe <- dagitty("dag{
+       X -> Z -> Y}")
+coordinates(dag.pipe) <- list(
+  x = c(X = 0, Y = 2, Z = 1),
+  y = c(X = 0, Y = 0, Z = 0)
+)
+drawdag(dag.pipe)
+impliedConditionalIndependencies(dag.pipe)
+
+```
+
+Once more, conditioning on $Z$ made $X$ and $Y$ orthogonal. Before, the causal model implied that this conditioning actually discarded spurious correlation. Now, we see a blocking from $X$ and $Y$, simply because $Z$ explains this relation away.
+
+* **The Collider**, which creates a spurious correlation between $X$ and $Y$ *if* we condition on $Z$.
+
+
+```{r, fig.width = 3, fig.height = 1.5, res = 500}
+
+dag.collider <- dagitty("dag{
+       X -> Z
+       Y -> Z}")
+coordinates(dag.collider) <- list(
+  x = c(X = 0, Y = 2, Z = 1),
+  y = c(X = 0, Y = 0, Z = 1)
+)
+drawdag(dag.collider)
+impliedConditionalIndependencies(dag.collider)
+
+
+```
+
+As we can see, $X$ and $Y$ are already orthogonal w/o any conditioning (meaning that the path is closed). If we condition on $Z$, we open this path, creating a non-causal and spurious relationship between $X$ and $Y$. Better lock the doors.
+
+* **The Descendant** means a variable $D$ influenced by another variable $Z$, so if we condition on $D$, we partly condition on $Z$.
+
+```{r, fig.width = 3, fig.height = 1.5, res = 500}
+
+dag.desc <- dagitty("dag{
+       Z -> X
+       Z -> Y
+       Z -> D}")
+coordinates(dag.desc) <- list(
+  x = c(X = 0, Y = 2, Z = 1, D = 1),
+  y = c(X = 0, Y = 0, Z = 1, D = 2)
+)
+drawdag(dag.desc)
+impliedConditionalIndependencies(dag.desc)
+
+```
+
+If we condition on $Z$ in this model, all relations become orthogonal. Let's try to understand that.
+
+First, there is no relationship between $X$ and $Y$, but there is a path through $Z$, which creates a spurious relationship between these two variables. If we condition on $Z$, we block this path and discard that spurious relationship.
+
+Similarly, there are paths from (a) $X$ and $D$ and (b) $Y$ and $D$, which are closed if we condition on $Z$.
+
+## 5E4
+
+Suppose that we conduct a survey to explain the effects of college drop-out $C$ on subsequent earnings $E$. Some people did not participate in the survey, which creates the response rate $R$.
+
+Let us also assume that $C$ decreases response rate and $E$ increases response rate, meaning that both has an effect on $R$.
+
+```{r, fig.width = 3, fig.height = 1.5, res = 500}
+
+dag.sampling <- dagitty("dag{
+       C -> R
+       E -> R
+       C -> E}")
+coordinates(dag.sampling) <- list(
+  x = c(C = 0, E = 2, R = 1),
+  y = c(C = 0, E = 0, R = 1)
+)
+drawdag(dag.sampling)
+
+```
+
+If we decide analyzing only the completed surveys by dropping those that did not answer, we effectively condition on $R$ (the response rate). This is similar to the *Berkson's Paradox* example where the committee selects individuals in a non-random way.
+
+Having a biased sample is thus a form of collider bias, which creates an endogenous selection into the sample.
+
+# Medium Problems
+
+## 5M1
+
+We are going to modify the DAG on p. 186 by including an unobserved $V$, cause of $C$ and $Y$: $C$ <- $V$ -> $Y$. First, the old version:
+
+```{r, fig.width = 3, fig.height = 1.5, res = 500}
+
+dag.p186.v1 <- dagitty("dag{
+       U [unobserved]
+       X -> Y
+       X <- U <- A -> C -> Y
+       U -> B <- C}")
+adjustmentSets(dag.p186.v1, exposure = "X", outcome = "Y")
+
+```
+
+As we can see, similar to the book, we need to condition on $C$ or $A$ in this case. Let's rewrite and inspect:
+
+```{r}
+
+dag.p186.v2 <- dagitty("dag{
+       U [unobserved]
+       V [unobserved]
+       X -> Y
+       X <- U <- A -> C -> Y
+       U -> B <- C
+       C <- V -> Y}")
+adjustmentSets(dag.p186.v2, exposure = "X", outcome = "Y")
+
+```
+
+C is now out of the picture, and the DAG tells us that we should condition on $A$. Why did we lose $C$? Let's draw the dag first:
+
+```{r, fig.width = 3, fig.height = 3, res = 500}
+
+coordinates(dag.p186.v2) <- list(
+  x = c(X = 1, Y = 3, A = 2, B = 2, C = 3, U = 1, V = 4),
+  y = c(X = 2, Y = 2, A = 0, B = 1, C = 1, U = 1, V = 1)
+)
+drawdag(dag.p186.v2)
+
+```
+
+As we can see, there are 5 paths in the DAG:
+
+* $X$ -> $Y$, which is open, and we would like to keep it open.
+
+* From $X$ to $Y$ through the nodes $U$, $B$, and $C$. This is, as we know, a collider, and it is closed, so we should keep it closed.
+
+* There is also the path that goes through $A$, which is open as $A$ is a confounder, and it must be closed. Before, we could condition on $A$ or $C$ to close this path, but not $U$ (since it is unobserved), but $C$ is now connected to $V$, which creates complications.
+
+* Two new paths include $V$, and both are closed, as $C$ is a collider now (see the triadic set $V$, $C$ and $A$). Will keep them closed!
+
+## 5M2
+
+A nice multicollinearity discussion! We are going to work on a structure of $X$ -> $Z$ -> $Y$. Let's first simulate some data:
+
+```{r}
+
+set.seed(112358)
+
+standardize <- function(x) {
+  (x - mean(x)) / sd(x)
+}
+
+d <- tibble(
+  x = rnorm(1000, 0, 1),
+  z = rnorm(1000, x, 0.5),
+  y = rnorm(1000, z, 0.5)
+) %>%
+  mutate(across(everything(), standardize))
+
+cor(d)
+
+```
+
+Cool! We have our data. As you can see, there is a strong correlation between $x$ and $z$. Let's fit a model.
+
+```{r}
+
+quap(alist(
+  y ~ dnorm(mu, sigma),
+  mu <- a + b1 * x + b2 * z,
+  a ~ dnorm(0, 1),
+  b1 ~ dnorm(0, 1),
+  b2 ~ dnorm(0, 1),
+  sigma ~ dexp(1)
+),
+data = d) %>%
+  precis() %>% round(2)
+
+```
+
+As we can see, all effects are piped through $z$, leaving $x$ no variation to explain. 
+
+This is not an example of multi-collinearity, simply because we know, through the DAG, that $x$ causes $z$, and there is no common cause that both causes $x$ and $z$ (like in the leg example). Our simulation structure also reflected that. 
+
+However, if we did not know the true data generation process, this high correlation could induce false modeling choices.
+
+## 5M3
+
+OK, just for practice, I am first going to draw these dags and save them to objects.
+
+```{r}
+
+rm(list = ls())
+
+dag.1 <- dagitty("dag{
+  Z <- A -> Y
+  X <- Z -> Y
+  X -> Y
+  }")
+
+dag.2 <- dagitty("dag{
+  Z <- A -> Y
+  X -> Z -> Y
+  X -> Y
+  }")
+
+dag.3 <- dagitty("dag{
+  Z <- A -> X
+  X -> Z <- Y
+  X -> Y
+  }")
+
+dag.4 <- dagitty("dag{
+  Z <- A -> X
+  X -> Z -> Y
+  X -> Y
+  }")
+
+```
+
+Cool! Before checking the answers, I will go through my reasonings for my expectations for each DAG. The one thing that I would like to emphasize is that the question wants us to evaluate the *total* causal effect, meaning that no mediation!
+
+* **DAG 1**: $Z$ is a confounder, so we must condition on that. No need for others, since there is no backdoor to $X$.
+
+* **DAG 2**: There is no backdoor to $X$, and conditioning on $Z$ would create a collider. So, no adjustment.
+
+* **DAG 3**: There are three paths from $X$ to $Y$, but only one is open. Conditioning on $Z$ would create a collider, and that path is thus currently close. Condititioning on $A$ also would open that path, so let's not do that, as well!
+
+* **DAG 4**: There are three paths from $X$ to $Y$, and all paths are open this time. Since we want to learn the total effect, we should not adjust for $Z$. However, $A$ can confound our main path, so we must condition on that.
+
+Let's see if my reasonings are true.
+
+```{r}
+
+adjustmentSets(dag.1, exposure = "X", outcome = "Y", effect = "total")
+adjustmentSets(dag.2, exposure = "X", outcome = "Y", effect = "total")
+adjustmentSets(dag.3, exposure = "X", outcome = "Y", effect = "total")
+adjustmentSets(dag.4, exposure = "X", outcome = "Y", effect = "total")
+
+```
+
+Cool!
+
+# Hard Problems
+
+## 5H1
+
+We are going to use the infamous Waffle House data. Let's load it.
+
+```{r}
+
+data(WaffleDivorce)
+d <- WaffleDivorce %>%
+  select(
+    reg = South,
+    age = MedianAgeMarriage,
+    div = Divorce,
+    waf = WaffleHouses,
+    mar = Marriage
+  ) %>% mutate(across(-reg, rethinking::standardize))
+rm(WaffleDivorce) # for clean-up
+
+```
+
+OK, the question wants us to measure the influence of $WaffleHouses$ on $Divorce$. Here is the causal graph I would propose (I add, of course, the *effects* of Waffle House on Divorce rate per this example).
+
+```{r, fig.width = 5, fig.height = 3, res = 500}
+
+dag.waffle <- dagitty("dag{
+       WaffleHouse -> Divorce
+       South -> Marriage
+       South -> MarriageAge
+       South -> Divorce
+       South -> WaffleHouse 
+       MarriageAge -> Divorce
+       MarriageAge -> Marriage
+       Marriage -> Divorce
+       }")
+coordinates(dag.waffle) <- list(
+  x = c(WaffleHouse = 1, South = 2, MarriageAge = 2, Marriage = 3, Divorce = 3),
+  y = c(WaffleHouse = 2, South = 0, MarriageAge = 1, Marriage = 1, Divorce = 2)
+)
+drawdag(dag.waffle)
+
+```
+
+OK, what should we condition on? The computers are good to think like that!
+
+```{r}
+
+adjustmentSets(dag.waffle, exposure = "WaffleHouse", outcome = "Divorce", effect = "total")
+
+```
+
+It seems that I only need to condition on $South$ with this DAG. Let's try.
+
+```{r}
+
+m.waffle <- quap(alist(
+  div ~ dnorm(mu, sigma),
+  mu <- a + b1 * waf + b2 * reg,
+  a ~ dnorm(0, 1),
+  b1 ~ dnorm(0, 1),
+  b2 ~ dnorm(0, 1),
+  sigma ~ dexp(1)
+), data = d)
+
+precis(m.waffle) %>% round(2)
+
+```
+
+Nice! The model shows that, once we condition on $South$, the potential influence of $WaffleHouse$ are discarded right away.
+
+## 5H2
+
+We first need to look at the implied conditional independencies of the causal graph I used in the previous example.
+
+```{r}
+
+impliedConditionalIndependencies(dag.waffle)
+
+```
+
+OK, there are two conditional independencies as far as we can see. Let's test them one by one.
+
+* Once we condition on $South$, the relationship between $WaffleHouses$ and $Marriage$ should be orthogonal.
+
+```{r}
+
+quap(alist(
+  mar ~ dnorm(mu, sigma),
+  mu <- a + b1 * waf + b2 * reg,
+  a ~ dnorm(0, 1),
+  b1 ~ dnorm(0, 1),
+  b2 ~ dnorm(0, 1),
+  sigma ~ dexp(1)
+), data = d) %>%
+  precis() %>% round(2)
+
+```
+
+Look at the parameter $\beta_1$, which is imprecise around 0. **Judgment: orthogonal!**
+
+* Once we condition on $South$, the relationship between $WaffleHouse$ and $MarriageAge$ should be orthogonal.
+
+```{r}
+
+quap(alist(
+  age ~ dnorm(mu, sigma),
+  mu <- a + b1 * waf + b2 * reg,
+  a ~ dnorm(0, 1),
+  b1 ~ dnorm(0, 1),
+  b2 ~ dnorm(0, 1),
+  sigma ~ dexp(1)
+), data = d) %>%
+  precis() %>% round(2)
+
+```
+
+Look at the parameter $\beta_1$, which is imprecise around 0. **Judgment: orthogonal!**
+
+*Overall comment*: it seems that everything checks out!
+
+## Intermezzo
+
+We are going to work with the `Foxes` data for questions 3, 4 and 5. Let's clean our environment and load the data.
+
+```{r}
+
+rm(list = ls())
+data(foxes)
+d <- foxes %>%
+  mutate(across(-group, standardize))
+rm(foxes)
+
+# let's inspect the data first
+glimpse(d)
+
+```
+
+We are going to assume the following DAG for the upcoming models.
+
+```{r, fig.width = 3, fig.height = 3, res = 500}
+
+dag.foxes <- dagitty("dag{
+       area -> avgfood
+       avgfood -> groupsize
+       avgfood -> weight <- groupsize
+       }")
+coordinates(dag.foxes) <- list(
+  x = c(area = 2, avgfood = 1, groupsize = 3, weight = 2),
+  y = c(area = 0, avgfood = 1, groupsize = 1, weight = 2)
+)
+drawdag(dag.foxes)
+
+```
+
+## 5H3
+
+We would like to infer the total causal influence of $area$ on $weight$. Let's first try to establish our adjustment set.
+
+```{r}
+
+adjustmentSets(dag.foxes, exposure = "area", outcome = "weight", effect = "total")
+
+```
+
+Cool! It seems that we do not need to adjust for any other variable. But bear in mind that the question asks us to find the *total* effect, which might change if we want to understand the mechanisms that underlie this effect!
+
+Increasing the area available for each fox could help finding different food sources, but might make them more vulnerable to threats.
+
+First, I want to make some prior predictive simulations to see whether my upcoming choices of priors are sensible.
+
+```{r}
+
+set.seed(112358)
+
+d.pps <- tibble(
+  id = 1:100,
+  a = rep(0, 100),
+  b = rnorm(100, 0, 0.5),
+  sigma = rexp(100, 1)
+)
+
+ggplot(d.pps) +
+  geom_abline(aes(
+    slope = b,
+    intercept = a
+  ),
+  alpha = .5) +
+  labs(x = "Area",
+       y = "Weight") +
+  xlim(-5, 5) +
+  ylim(-5, 5) +
+  theme(legend.position = "none") +
+  theme(aspect.ratio = 1)
+
+```
+
+No weird stuff I'd say. Let's fit our model to the data and inspect the results.
+
+```{r}
+
+quap(alist(
+  weight ~ dnorm(mu, sigma),
+  mu <- a + b * area,
+  a ~ dnorm(0, 1),
+  b ~ dnorm(0, 0.5),
+  sigma ~ dexp(1)
+), data = d) %>%
+  precis() %>% round(2)
+
+```
+
+The parameter estimation for $\beta$ shows that $area$ has no effect on $weight$ whatsoever.
+
+## 5H4
+
+OK, we are now going to estimate the effect of $avgfood$ on $area$. Let's first look at the adjustment set for total effects.
+
+```{r}
+
+adjustmentSets(dag.foxes, exposure = "avgfood", outcome = "weight", effect = "total")
+
+```
+
+No need! Cool. Let's fit the model, then.
+
+```{r}
+
+quap(alist(
+  weight ~ dnorm(mu, sigma),
+  mu <- a + b * avgfood,
+  a ~ dnorm(0, 1),
+  b ~ dnorm(0, 0.5),
+  sigma ~ dexp(1)
+), data = d) %>%
+  precis() %>% round(2)
+
+```
+
+Interestingly, no effect again (and I'm surprised!). What's going on here?
+
+## 5H5
+
+This time, we are asked to retrieve the total causal impact of group size. First, the adjustment set:
+
+```{r}
+
+adjustmentSets(dag.foxes, exposure = "groupsize", outcome = "weight", effect = "total")
+
+```
+
+Huh! This time we need to condition on something. Which makes sense, actually! If we look at the DAG itself, we see that $avgfood$ is a confounder to the relation between $groupsize$ and $weight$. Let's fit the model.
+
+```{r}
+
+m.grsize <- quap(alist(
+  weight ~ dnorm(mu, sigma),
+  mu <- a + b1 * avgfood + b2 * groupsize,
+  a ~ dnorm(0, 1),
+  b1 ~ dnorm(0, 0.5),
+  b2 ~ dnorm(0, 0.5),
+  sigma ~ dexp(1)
+), data = d)
+
+m.grsize %>% precis() %>% round(2)
+
+```
+
+So, $groupsize$ decreases the $weight$, while $avgfood$ increases it.
+
+I am now going to look at the posterior distributions and plot the estimations.
+
+```{r, fig.height = 5, fig.width = 10, res = 1000}
+
+# posterior draws
+draws <- tidy_draws(m.grsize, n = 100) %>%
+  select(a, b1, b2)
+
+# plot for average food
+p1 <- ggplot(draws) +
+  geom_abline(aes(intercept = a, slope = b1), alpha = .25) +
+  geom_point(
+    data = d,
+    mapping = aes(x = avgfood, y = weight),
+    alpha = .1
+  ) +
+  labs(x = "Average Food", y = "Weight", title = "Conditional Effect of Average Food on Weight")
+
+# plot for group size
+p2 <- ggplot(draws) +
+  geom_abline(aes(intercept = a, slope = b2), alpha = .25) +
+  geom_point(
+    data = d,
+    mapping = aes(x = groupsize, y = weight),
+    alpha = .1
+  ) +
+  labs(x = "Group Size", y = "Weight", title = "Conditional Effect of Group Size on Weight")
+
+grid.arrange(p1, p2, nrow = 1)
+
+```
+
+## 5H6
+
+Now, let's go with our *own* research question. I just like a clean environment, so let's do that.
+
+```{r}
+
+rm(list = ls())
+
+```
+
+One research question that I have in mind is to ask whether cultural transmission from a parent to a child occurs more successfully if the child sees father as having prestige. Here is a potential (and highly simplified, if I may) DAG that I have in mind.
+
+```{r}
+
+dag.prestige <- dagitty("dag{
+                        Prestige [exposure]
+                        Learning [outcome]
+                        CognitiveAbilities [unobserved]
+                        Prestige -> Learning
+                        ParentalEducation -> Prestige
+                        ParentalEducation -> Learning
+                        ParentalAgreement -> Prestige
+                        ParentalAgreement -> Learning
+                        CognitiveAbilities -> Learning
+                        ParentalEducation -> CognitiveAbilities
+                        }")
+coordinates(dag.prestige) <- list(
+  x = c(
+    Prestige = 1,
+    Learning = 2,
+    ParentalEducation = 2,
+    ParentalAgreement = 1,
+    CognitiveAbilities = 3
+  ),
+  y = c(
+    Prestige = 2,
+    Learning = 2,
+    ParentalEducation = 0,
+    ParentalAgreement = 0,
+    CognitiveAbilities = 1
+  )
+)
+drawdag(dag.prestige)
+
+```
+
+This is probably a *very bad* model, but let's go with this. Here are the testable implications and adjustment sets for the model.
+
+```{r}
+
+impliedConditionalIndependencies(dag.prestige)
+adjustmentSets(dag.prestige, effect = "total")
+
+```
+
+OK, as we can see, parental agreement and parental education are orthogonal, and we need to condition on both for a potential model.
+
+I omitted a lot of variables, most particularly those that involve genetic characteristics and non-parental environmental factors. Hence, a reasonable college would punch me on every respect, but I think this is the job!
+
+## 5H7
+
+Let's try a simulation.
+
+```{r}
+
+d <- tibble(
+  ParentalAgreement = rnorm(1000, 0, 1),
+  ParentalEducation = rnorm(1000, 0, 1),
+  Prestige = rnorm(
+    1000, 0.3*ParentalAgreement + 0.7*ParentalEducation, 1),
+  CognitiveAbilities = rnorm(
+    1000, 0.7*ParentalEducation, 1),
+  Learning = rnorm(
+    1000, 0.4*Prestige + 0.2*ParentalAgreement + 0.1*ParentalEducation + 0.3*CognitiveAbilities, 1)
+)
+
+```
+
+OK, we know the effect sizes, but we do **not** observe the cognitive abilities. So I will try to fit two regressions with and w/o that variable to see how the coefficient estimates change when we omit $CognitiveAbilities$.
+
+```{r}
+
+# model fits
+
+m1 <- quap(
+  alist(
+    Learning ~ dnorm(mu, sigma),
+    mu <-
+      a + b1 * Prestige + b2 * ParentalAgreement + b3 * ParentalEducation + b4 * CognitiveAbilities,
+    a ~ dnorm(0, 1),
+    b1 ~ dnorm(0, 0.5),
+    b2 ~ dnorm(0, 0.5),
+    b3 ~ dnorm(0, 0.5),
+    b4 ~ dnorm(0, 0.5),
+    sigma ~ dexp(1)
+  ),
+  data = d
+)
+
+m2 <- quap(
+  alist(
+    Learning ~ dnorm(mu, sigma),
+    mu <-
+      a + b1 * Prestige + b2 * ParentalAgreement + b3 * ParentalEducation,
+    a ~ dnorm(0, 1),
+    b1 ~ dnorm(0, 0.5),
+    b2 ~ dnorm(0, 0.5),
+    b3 ~ dnorm(0, 0.5),
+    sigma ~ dexp(1)
+  ),
+  data = d
+)
+
+```
+
+So, let's extract the estimations and plot two models side by side. Using Pablo's code again.
+
+```{r}
+
+# helper function
+extract.coefs <- function(models) {
+  lapply(1:length(models), function(x) {
+    tbl <-
+      precis(models[[x]]) # mean and compatibility intervals
+    model <-
+      names(models)[x] # the name of the model
+    
+    tbl %>%
+      as_tibble() %>%
+      mutate(coef = rownames(tbl),
+             model = model) %>%
+      relocate(model, coef)
+  })
+}
+
+# extract model coefficients
+modellist <- list(model_1 = m1,
+                  model_2 = m2)
+modelcoef <- extract.coefs(modellist) %>% 
+  bind_rows() %>%
+  janitor::clean_names()
+
+# plot
+modelcoef %>%
+  filter(coef != "sigma") %>% # don't wanna plot sigma
+  mutate(coef = factor(coef, levels = c("sigma", "b4", "b3", "b2", "b1", "a"))) %>%
+  ggplot(aes(x = mean, 
+             y = coef,
+             group = model,
+             color = model,
+             xmin = x5_5_percent,
+             xmax = x94_5_percent)) +
+  geom_point(size = 1.5) +
+  geom_linerange(size = 0.75) +
+  geom_vline(
+    aes(xintercept = 0),
+    size = 0.5,
+    linetype = "dotted",
+    color = "black"
+  ) +
+  labs(x = "Estimates", y = "Parameters")
+
+```
+
+As we can see, most of what $CognitiveAbilities$ would explain is subsumed under $ParentalEducation$, inflating the coefficient estimate of the latter, even though the influence was actually came from the former.
+
+Thank you!

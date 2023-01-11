@@ -1,0 +1,507 @@
+---
+title: "Soc722 - SR Chapter 3"
+author: "Turgut Keskintürk"
+date: '2022-09-23'
+output:
+  html_document:
+    theme: united
+    toc: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Hello there! Let's start with our exercises for McElreath's *Statistical Rethinking*, Chapter 3.
+
+# Set-Up
+
+```{r, message=FALSE}
+
+# load the relevant packages
+library(tidyverse) # again, I silenced this chunk to exclude messages.
+library(rethinking)
+
+```
+
+# Responses to Questions
+
+## Easy Problems
+
+I use McElreath's code block (3.27) to have a specific set of samples first, per instructions. I change certain parts to tidyverse format. I am not sure if ``dplyr`` sampling is exactly the same to base ``sample``, so for this particular example, I used the base version.
+
+```{r}
+
+# construct the data
+
+d <- tibble(p_grid = seq(
+  from = 0,
+  to = 1,
+  length.out = 1000
+),
+prior = rep(1, 1000)) %>%
+  mutate(likelihood = dbinom(6, size = 9, prob = p_grid)) %>%
+  mutate(posterior = likelihood * prior / sum(likelihood * prior))
+
+# set seed
+
+set.seed(100)
+
+# draw some good old samples
+
+samples <- tibble(samples = sample(
+  d$p_grid,
+  prob = d$posterior,
+  size = 1e4,
+  replace = TRUE
+))
+
+```
+
+**3E1**. Posterior probability that lies below p = 0.2.
+
+```{r}
+
+samples %>%
+  filter(samples < 0.2) %>%
+  summarise(sum = n() / 1e4)
+
+```
+
+The answer is **0.0004**. *Very low!*
+
+**3E2**. Posterior probability that lies above p = 0.8.
+
+```{r}
+
+samples %>%
+  filter(samples > 0.8) %>%
+  summarise(sum = n() / 1e4)
+
+```
+
+The answer is **0.112**
+
+**3E3**. Posterior probability that lies between p = 0.2 and p = 0.8.
+
+```{r}
+
+samples %>%
+  filter(samples > 0.2 & samples < 0.8) %>%
+  summarise(sum = n() / 1e4)
+
+```
+
+Well, we would expect to see something that nearly (the exact points excluded though) sums to 1, so the answer is **0.888.** OK, we now turn to the questions that ask us to compute the opposite of what we had above.
+
+**3E4**. 20% of the posterior probability lies below:
+
+```{r}
+
+samples %>% 
+  summarise(`20th percentile` = quantile(samples, p = .2))
+
+```
+
+We see that the answer is **0.519**.
+
+**3E5**. 20% of the posterior probability lies above:
+
+```{r}
+
+samples %>% 
+  summarise(`80th percentile` = quantile(samples, p = .8))
+
+```
+
+We see that the answer is **0.756**.
+
+**3E6**. The question asks of values of *p* that contain the narrowest interval equal to 66% of posterior probability. 
+
+```{r}
+
+rethinking::HPDI(samples$samples, prob = 0.66)
+
+```
+
+**3E7**. The question asks of values of *p* that contain 66% of the posterior probability, assuming equality below and above the interval.
+
+```{r}
+
+rethinking::PI(samples$samples, prob = 0.66)
+
+```
+
+Nice tricks! We have completed the easy problems.
+
+## Medium Problems
+
+Let's clean up the environment before proceeding to the next set of questions (my motto: best environment is a clean environment).
+
+```{r}
+
+rm(list = ls())
+
+```
+
+The next set of questions wants us to assume that globe tossing data end up with 8 water in 15 tosses.
+
+**3M1**. Let's construct the posterior distribution using grid approximation.
+
+```{r}
+
+d <- tibble(p_grid = seq(
+  from = 0,
+  to = 1,
+  length.out = 1000
+),
+prior = rep(1, 1000)) %>%
+  mutate(likelihood = dbinom(8, size = 15, prob = p_grid)) %>%
+  mutate(posterior = likelihood * prior / sum(likelihood * prior))
+
+```
+
+**3M2**. Nice, we have the posterior distribution with flat priors now. Let's now draw 10,000 (=1e4) samples from this approximation. Then, we are asked to return the 90% HPDI for *p*.
+
+```{r}
+
+# sampling
+
+set.seed(112358)
+
+samples <-
+  d %>%
+  dplyr::slice_sample(n = 1e4, weight_by = posterior, replace = T)
+
+# hpdi
+
+rethinking::HPDI(samples$p_grid, prob = 0.9)
+
+```
+
+Nicely done!
+
+**3M3**. We are going to construct a posterior predictive check for the data. In doing this, I will (a) simulate the distribution, (b) averaging over the posterior uncertainty in *p*. We are asked for Pr(8 Water in 15 Tosses).
+
+```{r}
+
+# create a dummy data with 100,000 observations
+
+set.seed(112358)
+
+dummy <- tibble(draws = rbinom(1e5, size = 15, prob = samples$p_grid))
+
+# plot
+
+dummy %>%
+  ggplot(aes(x = draws)) + 
+  geom_histogram(binwidth = 0.5) +
+  theme_bw() +
+  labs(x = "Pr(W)", y = "Frequency")
+
+# probability of observing 8 tosses
+
+dummy %>%
+  filter(draws == 8) %>%
+  summarize(Prob = n() / 1e5)
+
+```
+
+We see that the probability of observing 8 tosses out of 15 is **0.148**.
+
+**3M4**. Now, we are gonna look at the Pr(6 Water in 9 Tosses).
+
+```{r}
+
+# create a dummy data with 100,000 observations
+
+set.seed(112358)
+
+dummy <- tibble(draws = rbinom(1e5, size = 9, prob = samples$p_grid))
+
+# plot
+
+dummy %>%
+  ggplot(aes(x = draws)) + 
+  geom_histogram(binwidth = 0.25) +
+  theme_bw() +
+  labs(x = "Pr(W)", y = "Frequency")
+
+# probability of observing 6 tosses
+
+dummy %>%
+  filter(draws == 6) %>%
+  summarize(Prob = n() / 1e5)
+
+```
+
+Cool! The answer is **0.174**.
+
+**3M5**. OK, we are now changing our priors. Exciting! If *p* < 0.5, we are gonna use 0, and constant otherwise. Everything is same.
+
+```{r}
+
+# clean-up again
+
+rm(list = ls())
+
+# new distribution
+
+d <- tibble(
+  p_grid = seq(
+    from = 0,
+    to = 1,
+    length.out = 1000
+  ),
+  prior = ifelse(p_grid <= 0.5, 0, 1)
+) %>%
+  mutate(likelihood = dbinom(8, size = 15, prob = p_grid)) %>%
+  mutate(posterior = likelihood * prior / sum(likelihood * prior))
+
+# sampling
+
+set.seed(112358)
+
+samples <-
+  d %>%
+  dplyr::slice_sample(n = 1e4,
+                      weight_by = posterior,
+                      replace = T)
+```
+
+Nice. We updated everything. Let's look at the HPDI, and the remaining plots.
+
+
+```{r}
+
+# hpdi
+
+rethinking::HPDI(samples$p_grid, prob = 0.9)
+
+# 8 out of 15 tosses
+
+## create a dummy data with 100,000 observations
+
+set.seed(112358)
+
+dummy <- tibble(draws = rbinom(1e5, size = 15, prob = samples$p_grid))
+
+## plot
+
+dummy %>%
+  ggplot(aes(x = draws)) + 
+  geom_histogram(binwidth = 0.5) +
+  theme_bw() +
+  labs(x = "Pr(W)", y = "Frequency")
+
+## probability of observing 8 tosses
+
+dummy %>%
+  filter(draws == 8) %>%
+  summarize(Prob = n() / 1e5)
+
+# 6 out of 9 tosses
+
+## create a dummy data with 100,000 observations
+
+set.seed(112358)
+
+dummy <- tibble(draws = rbinom(1e5, size = 9, prob = samples$p_grid))
+
+## plot
+
+dummy %>%
+  ggplot(aes(x = draws)) + 
+  geom_histogram(binwidth = 0.25) +
+  theme_bw() +
+  labs(x = "Pr(W)", y = "Frequency")
+
+## probability of observing 6 tosses
+
+dummy %>%
+  filter(draws == 6) %>%
+  summarize(Prob = n() / 1e5)
+
+```
+
+OK, we see that HPDI is pushed to the right. Similar observations can be made with regard to the probabilities (8 out of 15 is pushed to 0.148 to 0.159, and 6 out of 9 is pushed from 0.174 to 0.231).
+
+**3M6**. It seems that I am gonna do some for loops. But not sure.
+
+```{r}
+
+# automate?
+
+how_many_tosses <- matrix(nrow = 250, ncol = 2)
+  loop_friend <- 1
+
+for (i in seq(from = 1, to = 5000, by = 20)) {
+  precise_rbinoms <- rbinom(1, size = i, prob = 0.7)
+  precise_rbinoms <-
+    tibble(p_grid = seq(from = 0, to = 1, length.out = 1000),
+           prior = rep(1, 1000)) %>%
+    mutate(likelihood = dbinom(precise_rbinoms, size = i, prob = p_grid)) %>%
+    mutate(posterior = likelihood * prior / sum(likelihood * prior))
+  precise_samples <- precise_rbinoms %>%
+    slice_sample(n = 10000, weight_by = posterior, replace = TRUE)
+  intervals <- rethinking::PI(precise_samples$p_grid, prob = .99)
+  how_many_tosses[[loop_friend, 1]] <- i
+  how_many_tosses[[loop_friend, 2]] <- intervals[[2]] - intervals[[1]]
+  loop_friend <- loop_friend + 1
+}
+
+# making it easy
+  
+how_many_tosses <- as.data.frame(how_many_tosses)
+
+```
+
+Aaah, no. This makes us approximate, but for a precise answer, no. I give up.
+
+## Hard Problems
+
+It is now time for the hard problems. Scary. But fun maybe? Let's see.
+
+We are going to load the data first.
+
+```{r}
+
+rm(list = ls())
+data(homeworkch3)
+
+# maybe a tibble data frame would work later on?
+
+df <- tibble(
+  birth1 = birth1,
+  birth2 = birth2,
+  b = birth1 + birth2,
+  g = 2 - b
+)
+
+```
+
+**3H1**. We are going to use grid approximation to compute the posterior distribution of a birth being boy.
+
+```{r}
+
+# construct the posterior distribution
+
+d <- tibble(p_grid = seq(
+  from = 0,
+  to = 1,
+  length.out = 100
+),
+prior = rep(1, 100)) %>%
+  mutate(likelihood = dbinom(sum(df$b), size = 200, prob = p_grid)) %>%
+  mutate(posterior = likelihood * prior / sum(likelihood * prior))
+
+# which parameter value maximizes the posterior probability?
+
+d %>%
+  arrange(desc(posterior)) %>%
+  slice(1) %>%
+  print()
+
+```
+
+It seems that the parameter value **0.556** maximizes the posterior probability.
+
+**3H2**. We are now going to sample 10,000 random parameters from the posterior distributions above.
+
+```{r}
+
+# sampling
+
+set.seed(112358)
+
+samples <-
+  d %>%
+  dplyr::slice_sample(n = 1e4, weight_by = posterior, replace = T)
+
+# highest posterior density intervals
+
+rethinking::HPDI(samples$p_grid, prob = 0.50)
+rethinking::HPDI(samples$p_grid, prob = 0.89)
+rethinking::HPDI(samples$p_grid, prob = 0.97)
+
+```
+
+Cool!
+
+**3H3**. Let's go with simulation. King McElreath proposes the ``dens`` command, so no tidyverse this time, Nico!
+
+```{r}
+
+# draws
+
+set.seed(112358)
+dummy <- tibble(draws = rbinom(1e4, size = 200, prob = samples$p_grid))
+
+# plot
+
+rethinking::dens(dummy$draws)
+
+```
+
+Yes, it seems that the data shows that the actual observation is a central outcome.
+
+**3H4**. Now, we are going to simulate only 100 observations, and compare this with 10,000 dummy observations.
+
+```{r}
+
+# recalibration
+
+d <- tibble(p_grid = seq(
+  from = 0,
+  to = 1,
+  length.out = 100
+),
+prior = rep(1, 100)) %>%
+  mutate(likelihood = dbinom(sum(df$birth1), size = 100, prob = p_grid)) %>%
+  mutate(posterior = likelihood * prior / sum(likelihood * prior))
+
+# new sampling for the first borns
+
+samples <-
+  d %>%
+  dplyr::slice_sample(n = 1e4, weight_by = posterior, replace = T)
+
+# new draws
+
+set.seed(112358)
+dummy_new <- tibble(draws = rbinom(1e4, size = 100, prob = samples$p_grid))
+
+# plot
+
+rethinking::dens(dummy_new$draws)
+
+```
+
+The actual number of boys in first-borns is ``sum(birth1)`` = **51**, which is pretty close, once more, to the modal value in this plot.
+
+**3H5**. OK, this is a bit complicated. I think we first need to know the number of girls among those who are first-born. This is easy. We can basically look it up as ``sum(birth1==0)``, which equals to 49. Now, we are going to simulate 10,000 births.
+
+```{r}
+
+girls_simulation <- tibble(draws = rbinom(1e4, size = 49, prob = samples$p_grid))
+
+# same plot for McElreath
+
+rethinking::dens(girls_simulation$draws)
+
+```
+
+OK, now, as you can see, the modal response turns to 25. What about the number of boys following the first-born girls. Let's learn that.
+
+```{r}
+
+df %>%
+  filter(birth1 == 0) %>%
+  summarize(sumboys = sum(birth2))
+
+```
+
+Huh, we see 39 boys here, compared to 25ish numbers, which suggests that the processes are not independent; namely, the first birth and the second birth has some sort of a dependence relationship in terms of biological sex!
+
+Thank you!

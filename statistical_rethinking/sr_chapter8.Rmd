@@ -1,0 +1,684 @@
+---
+title: "Soc722 - SR Chapter 8"
+author: "Turgut Keskintürk"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: united
+    toc: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(fig.align = "center")
+
+# load the relevant packages
+pacman::p_load(
+  tidyverse,
+  rethinking,
+  rstanarm,
+  tidybayes,
+  tidybayes.rethinking,
+  modelsummary,
+  patchwork,
+  ggeffects
+)
+theme_set(theme_bw()) # theme set for the plots
+
+```
+
+Hello there! Let's start with our exercises for McElreath's *Statistical Rethinking*, Chapter 8.
+
+# Easy Problems
+
+## 8E1
+
+Let's find some interactions:
+
+* *Bread dough rises because of yeast*, but this increase can be higher if there is alcohol as well (hope this is true, Google!).
+* *Education leads to higher income*, but gender moderates this by making returns to education higher for men.
+* *Gasoline makes a car go*, but only if the car's engine is in full working condition to allow that gasoline to work properly.
+
+## 8E2
+
+These are somewhat tricky (language can cause many afflictions and maladies). Here are my answers:
+
+* 1 is an **interaction**, as it ties the outcome to the presence of *both* low heat and not letting onions dry out.
+* 2 is **not an interaction** because the disjunction *or* (which is not used here as how philosophers use it!) does not claim the effect of one variable is moderated by the other variable. It is just additive.
+* 3 is tricky. If we understand "unless" as "either x or not x," which I will do here, this is **not an interaction**. If, on the other hand, we were to understand this as "it will be x, if not y first," then this would be an interaction.
+* 4 is **not an interaction** - the same reason for (2) applies here as well.
+
+## 8E3
+
+This is a nice question. I am just going to write the equation form w/o the specifications for distributions. No error terms as well.
+
+* If $C$ refers to caramelization, $H$ to low heat, and $O$ to onions not drying out:
+$C = \alpha + \beta_1 H + \beta_2 O + \beta_3(L*O)$.
+
+* If $S$ refers to speed, $C$ to cylinder, and $F$ to fuel injectors:
+$S = \alpha + \beta_1 C + \beta_2 F$.
+
+* If $B$ refers to political beliefs, $P$ to parental beliefs, and $F$ to friends' beliefs:
+$B = \alpha + \beta_1 P + \beta_2 F$.
+
+* If $I$ refers to intelligence, $S$ to sociability, and $A$ to appendages:
+$I = \alpha + \beta_1 S + \beta_2 A$.
+
+# Medium Problems
+
+## 8M1
+
+OK, let's first *remember* the tulip example. The model told us that bloom depends upon water and shade, and their interaction. Let's load the data, build the model, and see the `precis` outcome before answering this (and following) questions.
+
+```{r}
+
+# load the data
+data(tulips)
+t <- tulips %>%
+  mutate(
+    water = water - mean(water),
+    shade = shade - mean(shade),
+    blooms = blooms / max(blooms)
+  )
+rm(tulips) # clean-up
+
+# build the quap model
+t.m <- quap(
+  alist(
+    blooms ~ dnorm(mu, sigma),
+    mu <- a + b1 * water + b2 * shade + b3 * water * shade,
+    a ~ dnorm(0.5, 0.25),
+    c(b1, b2, b3) ~ dnorm(0, 0.25),
+    sigma ~ dexp(1)
+  ),
+  data = t
+)
+
+# inspect the outcome
+precis(t.m) %>% round(2)
+
+```
+
+OK, $water$ increases $blooms$, $shade$ decreases it, and we see a negative interaction effect.
+
+We now have a treatment in place. If the data were collected in cold temperatures, while no blooms in hot temperatures, this means that we have a three-way interaction: blooming depends on the interaction of $water$ and $shade$, which in turn depends on $temperature$.
+
+The fact that there is **no** bloom in one condition necessitates a stringent equation, to which I return in the next question.
+
+## 8M2
+
+Let's say we have a new variable, $temperature$, that takes 0 if it is cold and 1 if it is hot.
+
+If we want to make blooms completely 0, we can simply multiply the whole equation with (1 - $temperature$). Here is the final equation:
+
+$$
+blooms = (\alpha + \beta_1 water + \beta_2 shade + \beta_3 shade*water)(1 - temperature)
+$$
+
+## 8M3
+
+Well, a lot of cool differential equations are possible with these kinds of questions! I do not think that it would work as linear, simply because the effects of a change in wolf distribution would probably create non-linearities for the raven distribution.
+
+Yet, let's assume a simple structure. Here are my choices:
+
+* The variable $preys$ will be a simple normal distribution.
+* The $wolfs$ will depend on the number of preys. Let's make it non-linear: more increase in preys would mean more increase in wolfs.
+* Finally, $raven$ will depend on both $preys$ and $wolfs$, and their interaction.
+
+I will also just use `rnorm`, although something like `rpois` would be more appropriate.
+
+```{r, fig.width = 5, fig.height = 5, dpi = 300}
+
+set.seed(11235)
+
+n <- 50
+d <- tibble(
+  preys = rnorm(n, mean = 2, sd = 0.5),
+  wolfs = rnorm(n, mean = exp(preys), sd = 0.75),
+  raven = rnorm(n,
+                mean = 
+                  0.5*preys + 0.1*wolfs + 0.5*preys*wolfs,
+                sd = 0.5))
+    
+
+```
+
+Nice! Allow me to use `lm` here for this time, as I want to plot using the `sjPlot` in the regression.
+
+```{r}
+
+# model fit
+
+d.m <- lm(
+  raven ~ 
+    preys * wolfs,
+  data = d
+)
+
+# plot
+
+sjPlot::plot_model(d.m, type = "int") +
+  labs(title = "Predicted Number of Ravens", x = "Preys", y = "Ravens") +
+  theme(legend.position = "top") +
+  scale_color_discrete(
+    labels = c("Low # of Wolfs", "High # of Wolfs"))
+
+```
+
+## 8M4
+
+Tulips again! First, I am going to do some prior predictive simulations.
+
+```{r, fig.width = 10, fig.height = 5}
+
+set.seed(112358)
+
+n <- 100
+
+t.p <- tibble(
+  id = 1:n,
+  a = rep(0, n),
+  b1 = rlnorm(n, 0, 0.75), b2 = -rlnorm(n, 0, 0.75),
+  sigma = rexp(n, 1)
+)
+
+p1 <- ggplot(t.p) +
+  geom_abline(aes(
+    slope = b1,
+    intercept = a
+  ),
+  alpha = .5) +
+  labs(x = "Water",
+       y = "Bloom") +
+  xlim(-5, 5) +
+  ylim(-5, 5) +
+  theme(legend.position = "none") +
+  theme(aspect.ratio = 1) +
+  labs(title = "The Effect of Water")
+
+p2 <- ggplot(t.p) +
+  geom_abline(aes(
+    slope = b2,
+    intercept = a
+  ),
+  alpha = .5) +
+  labs(x = "Shade",
+       y = "Bloom") +
+  xlim(-5, 5) +
+  ylim(-5, 5) +
+  theme(legend.position = "none") +
+  theme(aspect.ratio = 1) +
+  labs(title = "The Effect of Shade")
+
+p1 + p2
+
+```
+
+These are pretty wide slope distributions, but I at least constrained them to have specific signs. How do these affect the interaction? This is effectively constraining the interaction to be *negative*, even though its magnitude can differ drastically.
+
+# Hard Problems
+
+## 8H1
+
+We are going to roll with `tulips` again and add `beds` as a new predictor.
+
+```{r}
+
+# build the quap model
+t.m.beds <- quap(
+  alist(
+    blooms ~ dnorm(mu, sigma),
+    mu <- a[bed] + b1 * water + b2 * shade + b3 * water * shade,
+    a[bed] ~ dnorm(0.5, 0.1),
+    c(b1, b2, b3) <- dnorm(0, 0.25),
+    sigma ~ dexp(1)
+  ),
+  data = t
+)
+
+# inspect
+precis(t.m.beds, depth = 2) %>% round(2)
+
+```
+
+Cool!
+
+## 8H2
+
+Let's compare this `tulips` model with the previous one where we did not include `beds` as an independent variable.
+
+```{r}
+
+compare(t.m, t.m.beds)
+
+```
+
+The results support the model with `beds` included, though when we look at the standard errors, the differences do not seem high. I would still include the variable to the extent that it helps us measure differences, but let's look at the posterior draws to decide.
+
+```{r, fig.width = 5, fig.height = 2.5, dpi = 300}
+
+tidy_draws(t.m.beds, n = 1000) %>%
+  janitor::clean_names() %>%
+  select(a_1, a_2, a_3) %>%
+  pivot_longer(cols = everything(), names_to = "beds", values_to = "coefs") %>%
+  ggplot(aes(x = coefs, fill = beds)) +
+  geom_density(alpha = 0.5) + theme(legend.position = "top") +
+  scale_fill_discrete(
+    name = "",
+    labels = c("Bed A", "Bed B", "Bed C")) +
+  labs(x = "Intercepts", y = "Density")
+
+```
+
+OK, I'd say we should include the variable to account for the distributional differences across different beds.
+
+## 8H3
+
+We are going to work with the dataset `rugged` this time. Let's load it and inspect the countries.
+
+```{r, fig.width = 5, fig.height = 5, dpi = 300}
+
+data(rugged)
+r <- rugged %>%
+  select(country, rgdppc_2000, rugged, cont_africa) %>%
+  drop_na() %>%
+  mutate(
+    log_gdp = log(rgdppc_2000),
+    log_gdp = log_gdp/mean(log_gdp),
+    ruggeds = rugged/max(rugged),
+    cont_africa = factor(cont_africa, levels = c(0, 1),
+                         labels = c("Non-African", "African")))
+
+ggplot(r,
+       aes(x = ruggeds, y = log_gdp, col = cont_africa)) +
+  geom_point() + 
+  labs(x = "Ruggedness", y = "Log(GDP)", color = "") +
+  theme(legend.position = "top")
+
+```
+
+I am assuming that this is a typo, and we need to inspect `m8.3` for this question. Let's first fit the model.
+
+```{r}
+
+r.m1 <- quap(alist(
+  log_gdp ~ dnorm(mu, sigma),
+  mu <- a[cont_africa] + b[cont_africa]*(ruggeds-0.215),
+  a[cont_africa] ~ dnorm(1, 0.1),
+  b[cont_africa] ~ dnorm(0, 0.3),
+  sigma ~ dexp(1)
+), data = r)
+
+```
+
+OK. We fitted the model. We are now going to inspect the influential countries. Let's use the PSIS Pareto *k* values to measure the relative influence of each country (skipping WAIC, as it provides comparable results).
+
+```{r, fig.width = 7.5, fig.height = 2.5}
+
+r.inf <- PSIS(r.m1, pointwise = T) %>%
+  as_tibble() %>%
+  select(k) %>%
+  bind_cols(r)
+
+p1 <- r.inf %>%
+  arrange(desc(k)) %>%
+  slice_head(n = 10) %>%
+  ggplot(
+    aes(x = reorder(country, k), k)
+  ) + geom_point() + coord_flip() +
+  labs(title = "Pareto k values", subtitle = "First 10 in all countries",
+       x = "", y = "k")
+
+p2 <- r.inf %>%
+  filter(cont_africa == "African") %>%
+  arrange(desc(k)) %>%
+  slice_head(n = 10) %>%
+  ggplot(
+    aes(x = reorder(country, k), k)
+  ) + geom_point() + coord_flip() +
+    labs(title = "Pareto k values", subtitle = "First 10 in African countries",
+       x = "", y = "k")
+
+p1 + p2
+  
+```
+
+Yes! As expected, Seychelles seems to have an important influential effect on our regression models, though not as much as Lesotho.
+
+Let's use robust regression and fit the model once more with *v* = 2. 
+
+```{r}
+
+r.m2 <- quap(alist(
+  log_gdp ~ dstudent(2, mu, sigma),
+  mu <- a[cont_africa] + b[cont_africa]*(ruggeds-0.215),
+  a[cont_africa] ~ dnorm(1, 0.1),
+  b[cont_africa] ~ dnorm(0, 0.3),
+  sigma ~ dexp(1)
+), data = r)
+
+```
+
+Cool! What I wonder now is whether the difference between slope of African countries and slope of non-African countries are substantially different after we used robust regression. Let's draw some model coefficients and compare the two models.
+
+```{r, fig.width = 5, fig.height = 5, dpi = 300}
+
+r.d1 <- tidy_draws(r.m1, n = 1000) %>%
+  janitor::clean_names() %>%
+  select(m1.african = b_1, m1.nonaf = b_2)
+r.d2 <- tidy_draws(r.m2, n = 1000) %>%
+    janitor::clean_names() %>%
+  select(m2.african = b_1, m2.nonaf = b_2)
+
+r.draws <- bind_cols(r.d1, r.d2) %>%
+  mutate(
+    model1_difference = m1.african-m1.nonaf,
+    model2_difference = m2.african-m2.nonaf)
+
+r.draws %>%
+  select(model1_difference, model2_difference) %>%
+  pivot_longer(cols = everything(),
+               names_to = "models",
+               values_to = "diffs") %>%
+  ggplot(aes(x = diffs, fill = models)) +
+  geom_density(alpha = 0.5) + theme(legend.position = "top") +
+  scale_fill_discrete(
+    name = "",
+    labels = c("Model 1 Difference", "Model 2 Difference")) +
+  labs(x = "Slope Differences", y = "Density")
+  
+```
+
+It seems that robust model made the difference between African and non-African nations even more pronounced!
+
+## 8H4
+
+This seems like an exciting data and a hypothesis! Let's load it and wrangle.
+
+```{r}
+
+data(nettle)
+n <- nettle %>%
+  mutate(
+    lang.per.cap = log(num.lang / k.pop),
+    l.area = log(area)
+  )
+
+```
+
+We would like to know whether language diversity depends on food security. Before starting the regression fits, let's visualize the bivariate relationship between language diversity and growing season measures to see what's going on there:
+
+```{r, fig.width = 10, fig.height = 5}
+
+p1 <- ggplot(n,
+       aes(x = mean.growing.season,
+           y = lang.per.cap,
+           size = area)) +
+  geom_point() +
+  geom_smooth(se = F, method = "lm", col = "steelblue") +
+  labs(x = "Growing Season (Mean)", y = "Language per Capita") +
+  theme(legend.position = "none")
+
+p2 <- ggplot(n,
+       aes(x = sd.growing.season,
+           y = lang.per.cap,
+           size = area)) +
+  geom_point() +
+  geom_smooth(se = F, method = "lm", col = "steelblue") +
+  labs(x = "Growing Season (SD)", y = "Language per Capita") +
+  theme(legend.position = "none")
+
+p1 + p2
+
+```
+
+OK, it seems that we have some sort of predictive relationships, but of course, we would like to think through the causality here. Let's follow McElreath's suggested route to have an opinion about the relationships.
+
+I will specify the following priors for the models:
+
+* For the $\alpha$, I'll specify -5 as the mean, and 2 as the standard deviation. This is a logarithmic outcome, and all values, as expected, are below 0. Let's try to be as inclusive as possible, given that there is wide variation in the outcome.
+* We do not know the direction for $\beta_1$ and $\beta_2$, so I will try to be reasonable but wide in both directions.
+
+```{r}
+
+n.m1 <- quap(alist(
+  lang.per.cap ~ dnorm(mu, sigma),
+  mu <- a + b1*mean.growing.season + b2*l.area,
+  a ~ dnorm(-5, 2),
+  c(b1, b2) ~ dnorm(0, 1),
+  sigma ~ dexp(1)
+), data = n)
+
+precis(n.m1) %>% round(2)
+
+```
+
+OK, as a first approximation, we see that growing season is indeed positively associated with language diversity, controlling for area. Let me now fit the model again, this time using the standard deviation of the growing season.
+
+```{r}
+
+n.m2 <- quap(alist(
+  lang.per.cap ~ dnorm(mu, sigma),
+  mu <- a + b1*sd.growing.season + b2*l.area,
+  a ~ dnorm(-5, 2),
+  c(b1, b2) ~ dnorm(0, 1),
+  sigma ~ dexp(1)
+), data = n)
+
+precis(n.m2) %>% round(2)
+
+```
+
+There is some uncertainty around $\beta_1$, but the magnitude and direction shows that there is a negative relationship, indeed.
+
+Let's look at the interaction.
+
+```{r}
+
+n.m3 <- quap(alist(
+  lang.per.cap ~ dnorm(mu, sigma),
+  mu <- 
+    a +
+    b1*mean.growing.season + 
+    b2*sd.growing.season + 
+    b3*(mean.growing.season * sd.growing.season) +
+    b4*l.area,
+  a ~ dnorm(-5, 2),
+  c(b1, b2, b3, b4) ~ dnorm(0, 1),
+  sigma ~ dexp(1)
+), data = n)
+
+precis(n.m3) %>% round(2)
+
+```
+
+OK, we have some results, but per Steve's suggestion, I am better off if I plot the interaction effects. Let me fit this model with `rstanarm` first (using the quadratic approximation) to have a more ready-to-work model fit that allows me to use some packages.
+
+```{r}
+
+n.m3.stan <- stan_glm(
+  lang.per.cap ~ mean.growing.season * sd.growing.season + l.area,
+  data = n,
+  prior_intercept = normal(0, 1, autoscale = T),
+  prior = normal(0, 1, autoscale = T),
+  prior_aux = exponential(1, autoscale = T),
+  algorithm = "optimizing"
+)
+
+```
+
+Phew! Let's make the plot and see what's going on:
+
+```{r, fig.width = 7.5, fig.height = 5, dpi = 300}
+
+ggpredict(
+  n.m3.stan,
+  ci.lvl = .89,
+  terms = c("mean.growing.season", "sd.growing.season [quart]")
+) %>%
+  plot() + theme(legend.position = "top") +
+  labs(
+    title = "",
+    x = "Growing Season (Mean)", y = "Language per Capita") +
+  scale_color_discrete(
+    name = "Growing Season (SD) Values",
+    labels = c("Min", "Lower Quartile", "Median", "Upper Quartile", "Max"))
+
+```
+
+Awesome! This basically tells us that it is indeed true that mean growing season increases language diversity, but only if the standard deviation of growing season is relatively low; if it is high (see the *max* value), a synergistic reduction occurs (as McElreath said)!
+
+Before finishing up, let's see which model provides better estimations.
+
+```{r}
+
+compare(n.m1, n.m2, n.m3)
+
+```
+
+Great! `n.m3` is preferred, even though the differences are not that pronounced.
+
+## 8H5
+
+Some wines! Thank you, after all the American beers I've been exposed.
+
+```{r}
+
+data(Wines2012)
+w <- Wines2012 %>%
+  mutate(
+    score = (score - mean(score)) / sd(score)
+  )
+
+```
+
+Let's fit a regression model for `scores`. I will use the standardized variable, and for each index (either wine or judge), I will use a prior with mean = 0 and standard deviation = 0.5. This will allow me to see the variations across these two indices easily.
+
+```{r}
+
+w.m <- quap(alist(
+  score ~ dnorm(mu, sigma),
+  mu <- a1[wine] + a2[judge],
+  a1[wine] ~ dnorm(0, 0.5), 
+  a2[judge] ~ dnorm(0, 0.5),
+  sigma ~ exp(1)
+), data = w)
+
+precis(w.m, depth = 2) %>% round(2)
+
+```
+
+Well, this is not helpful. Let's plot the coefficients for judges and wines to be able to have some ideas.
+
+```{r, fig.width = 8, fig.height = 4, dpi = 300}
+
+w.m.out <-
+  precis(w.m, depth = 2) %>%
+  as_tibble(rownames = "coefficients") %>%
+  janitor::clean_names()
+
+p1 <- w.m.out %>%
+  filter(str_detect(coefficients, 'a1')) %>%
+  ggplot(aes(x = reorder(coefficients, mean), y = mean)) +
+  geom_pointrange(aes(ymin = x5_5_percent, ymax = x94_5_percent)) +
+  coord_flip() +
+  labs(x = "Score", y = "Wine", title = "Variation Across Wines") +
+  scale_y_continuous(limits = c(-1, 1))
+
+p2 <- w.m.out %>%
+  filter(str_detect(coefficients, 'a2')) %>%
+  ggplot(aes(x = reorder(coefficients, mean), y = mean)) +
+  geom_pointrange(aes(ymin = x5_5_percent, ymax = x94_5_percent)) +
+  coord_flip() +
+  labs(x = "Score", y = "Judge", title = "Variation Across Judges") +
+  scale_y_continuous(limits = c(-1, 1))
+
+p1 + p2
+
+```
+
+Cool! It seems that judges, rather than wines (may be with the exception of wine number 18), contribute most to the variations. We can call Judge 5 the Good Judge and the Judge 8 the Bad Judge. I should look at how they would view Wine 18 compared to others.
+
+## 8H6
+
+Let's fit the new model using the new variables for `Wines`. I will use `flight` as an index variable, and give a relatively bland prior (0) to make them impartial in the beginning. I think Americans are not that picky as Europeans (lol), but let's still give them equal chance.
+
+```{r}
+
+w.m <- quap(alist(
+  score ~ dnorm(mu, sigma),
+  mu <- a1[flight] + b1*wine.amer + b2*judge.amer,
+  a1[flight] ~ dnorm(0, 0.5), 
+  c(b1, b2) ~ dnorm(0, 0.5),
+  sigma ~ exp(1)
+), data = w)
+
+precis(w.m, depth = 2) %>% round(2)
+
+```
+
+Huh, not much difference. It makes sense that the American wines are not that different, as we saw above that the wine variation is not that much. Though we saw variation across judges, so it seems this variation cannot be attributed to being an American (shoot!).
+
+## 8H7
+
+The final set of models with interactions! Let's build them.
+
+```{r}
+
+# let's change flight to an indicater variable
+w <- w %>%
+  mutate(flight2 = ifelse(flight == "white", 1, 0))
+
+w.m <- quap(alist(
+  score ~ dnorm(mu, sigma),
+  mu <- a + b1*flight2 + b2*wine.amer + b3*judge.amer +
+    b4*flight2*wine.amer + b5*flight2*wine.amer + b6*wine.amer*judge.amer,
+  a ~ dnorm(0, 1), 
+  c(b1, b2, b3) ~ dnorm(0, 1),
+  c(b4, b5, b6) ~ dnorm(0, 0.5),
+  sigma ~ exp(1)
+), data = w)
+
+precis(w.m, depth = 2) %>% round(2)
+
+```
+
+OK, the `precis` outcome is too weird to go with. Let's create some predictions from the model, so that we can adjudicate what's going on.
+
+```{r}
+
+w.draws <- predicted_draws(w.m, newdata = w)
+
+```
+
+There should be $2^3 = 8$ unique combinations of our features. We can group by the predicted draws, compute the means and standard deviations for each combination, and compare their distribution across the predictions.
+
+```{r}
+
+# summarize
+
+w.draws.grouped <- w.draws %>%
+  mutate(combination = paste0(wine.amer, judge.amer, flight2)) %>%
+  group_by(combination) %>%
+  summarize(mean.score = mean(score),
+            sd.score = sd(score))
+
+# plot
+
+w.draws.grouped %>%
+  ggplot(aes(x = reorder(combination, mean.score), y = mean.score)) +
+  geom_pointrange(aes(
+    ymin = mean.score - sd.score,
+    ymax = mean.score + sd.score
+  )) + labs(x = "Combinations", y = "Score") +
+  geom_hline(yintercept = 0, linetype = "dashed")
+
+```
+
+It seems that if a wine is American, judge is not an American, and it's red, it gets relatively lower scores, while if a wine is not American, judge is an American, and it's red, it gets relatively higher scores.
+
+This is kind of related to what we saw about our judges above, but results are too uncertain to draw big conclusions.
+
+Thank you!
+

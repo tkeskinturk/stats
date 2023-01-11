@@ -1,0 +1,865 @@
+---
+title: "Soc723 - SR Chapter 11"
+author: "Turgut Keskintürk"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: united
+    toc: true
+    number_sections: true
+    code_folding: "hide"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(fig.align = "center")
+
+# load the relevant packages
+pacman::p_load(
+  tidyverse,
+  purrr,
+  rethinking,
+  rstan,
+  tidybayes,
+  tidybayes.rethinking,
+  modelsummary,
+  patchwork,
+  ggeffects,
+  hrbrthemes,
+  dagitty
+)
+theme_set(theme_ipsum_rc()) # theme set for the plots
+
+```
+
+Hello there! Let's start with our exercises for McElreath's *Statistical Rethinking*, Chapter 11.
+
+# Easy Problems
+
+## 11E1
+
+The simple log-odds transformation function should work for this question. Let me start by replicating the formula:
+
+$$
+\text{logit}(p_i) = \text{log}\frac{p_i}{1-p_i}
+$$
+
+We have $\text{log} \frac{0.35}{1 - 0.35} = 0.62$.
+
+## 11E2
+
+What we need here is the inverse-logit, or logistic function, to calculate the probability:
+
+$$
+p_i = \frac{e^x}{1 + e^x}
+$$ 
+This transforms to $\frac{exp(3.2)}{1 + exp(3.2)} = 0.96$.
+
+## 11E3
+
+It is best to transform the regression coefficient to odds-ratios to facilitate interpretation. We can do this by exponentiating the value. In this case, it is $exp(1.7) = 5.47$, which means that one unit change in this covariate makes the *odds of the outcome* 5.5 times more likely.
+
+## 11E4
+
+The poisson distribution is defined by a rate parameter, $\lambda$, and we use a log-link for Poisson generalized linear models:
+
+$$
+log(\lambda_i) = \alpha + \beta x
+$$
+
+But notice that this $\lambda$ parameter is a stand-in for *counts*. Sometimes, we want to model *rates*, which are counts normalized across a unit (time or distance). The classical example here is the number of people coming to a restaurant every hour.
+
+This substantive interest transforms the model like this:
+
+$$
+log(\frac{\lambda_i}{t}) = \alpha + \beta x
+$$
+
+Yet, the $t$ can be different for different measurements (e.g., one restaurant might record the number of customers in one hour, while the other restaurant might record them every half-hour). In these situations, we need to adjust for these differences.
+
+Let's derive the equation to understand this more clearly. Using the definition of logarithms:
+
+$$
+log(\lambda_i) - log(t) = \alpha + \beta x
+$$
+
+Rearranging the terms:
+
+$$
+log(\lambda_i) = \alpha + \beta x + log(t)
+$$
+
+Notice that the coefficient or weight for $log(t)$ is constrained to be 1 in this case, and it functions as the *offset*, which adjusts for the fact that our measurements can occur in different quantities or scales across different cases.
+
+# Medium Problems
+
+## 11M1
+
+Before explaining this difference, let's think about the binomial distribution formula in its general form:
+
+$$
+P_x = \binom{n}{x}p^x q^{n-x} 
+$$
+
+What is important about this formula is the first combination term, which regulates the fact that the terms can be ordered in a variety of ways. The data structure in the aggregated form thus ends up taking into account the potential orderings that can generate the data.
+
+In the disaggregated form, however, this first term drops, because we now *know* about the ordering:
+
+$$
+P_x = p^x q^{n-x}
+$$
+
+Once we work with this disaggregated form, we calculate the joint probability without that extra term in the first expression.
+
+One thing that is important here is McElreath's discussion on PSIS/WAIC scores being smaller in the aggregated format. The extra binomial term makes it possible to generate the same data with different ways, which, in turn, makes these scores smaller.
+
+## 11M2
+
+OK, let me, once again, play with the link functions themselves, as I find them more intuitive.
+
+The interpretation of the link function, whatever it is, is actually generalizable across all generalized linear models: the rate of change in $\mu$ is the rate of change in the inverse function of our linear function $g$, which is $g^{-1}$.
+
+In the Poisson case, we know that the function is a log-link, meaning that $g(x)$ is $ln(x)$ and $g^{-1}$ is $e^x$. Thus, exponentiate again!
+
+In this case, a change of $1.7$ means, when it is exponentiated, $e^{1.7} = 5.47$ change in the outcome variable.
+
+## 11M3
+
+I have reproduced the logit link function in **11E1**, and the inverse logit (logistic function) in **11E2**. The logit allows us to constrain the probability space to be between 0 and 1, which we then map to the outcomes of 0s and 1s.
+
+## 11M4
+
+The log-link helps the Poisson model in two ways: (a) just as in the logit-link, it ensures that the parameter $\lambda_t$ is always positive but, in contrast to the logit-link, (b) it allows an exponential relationship to be modeled for outcomes above 1.
+
+We can think about this more clearly if we exponentiate both sides of the equation:
+
+$$
+E(Y | X ) = e^{\beta X}
+$$
+
+As we can see, the expected value of $Y$ given a vector of variables $X$ varies in an exponential fashion.
+
+## 11M5
+
+Remember that the most defining feature that separates the logit-link from the log-link is that the latter allows the number of events to be more than 1, which is why we use it as a link function for the Poisson distributions in the first place.
+
+Using a logit link instead of a log link would constrain the N in an interval between 0 and 1, which is plausible if the event is extremely rare.
+
+Of course, there is nothing intrinsic about a *Poisson distribution*: a Poisson distribution can approximate a binomial distribution. In fact, Poisson distribution is a special case of binomial distribution where the number of trials is high but the probability of success is low.
+
+Let me write a function where we can manipulate the $\lambda$ parameter, which is basically $np$, to see its similarity with binomial distribution.
+
+```{r}
+
+dist.comparison <- function(sample, n, p) {
+  
+  # data
+  d = tibble(
+    binomial = rbinom(sample, n, p),
+    poisson = rpois(sample, n*p)
+  ) %>% pivot_longer(cols = everything(), 
+                     names_to = "distribution", 
+                     values_to = "values")
+
+  # plot
+  ggplot(d, aes(x = values, fill = distribution)) +
+    geom_bar(position = "dodge") +
+    scale_fill_manual(
+      values = c("#9986A5", "#79402E")) +
+    theme(legend.position = "top")
+}
+
+```
+
+Let's look at the distributional differences when we vary $n$ and $p$ to see what's going on:
+
+```{r, fig.width = 12.5, fig.height = 10, dpi = 300}
+
+N <- 1000
+
+p1 <- dist.comparison(N, 2, 0.95) + labs(
+  title = "Low N & High P", subtitle = "n = 2, p = 0.95")
+p2 <- dist.comparison(N, 2, 0.05) + labs( 
+  title = "Low N & Low P", subtitle = "n = 2, p = 0.05")
+p3 <- dist.comparison(N, 50, 0.95) + labs(
+  title = "High N & High P", subtitle = "n = 50, p = 0.95")
+p4 <- dist.comparison(N, 50, 0.05) + labs(
+  title = "High N & Low P", subtitle = "n = 50, p = 0.05")
+
+(p1 + p2) / (p3 + p4)
+
+```
+
+As we can see, when the probability becomes lower and the number of trials become higher, the Poisson approximates to the Binomial.
+
+## 11M6
+
+There are two entropy constraints for the binomial distribution: (1) two unordered events and (2) constant probability of success on each trial, which is same for the Poisson distribution. As I've mentioned above, the reason is that the Poisson is a special case of the binomial.
+
+## 11M7
+
+OK, we are going to estimate the chimpanzee model with `quap`, where each actor has their unique intercept. We also need to re-estimate these models using more uninformative priors. The chunk below will do this as a preparation.
+
+```{r, message = FALSE, warning = FALSE, results = "hide"}
+
+# prepare the data
+data(chimpanzees)
+d <- chimpanzees %>%
+  mutate(treatment = 1 + prosoc_left + 2*condition)
+d.list <- list(
+  pulled_left = d$pulled_left,
+  actor = d$actor,
+  treatment = as.integer(d$treatment)
+)
+
+# ulam model
+m.ulam1 <- ulam(alist(
+  pulled_left ~ dbinom(1, p),
+  logit(p) <- a[actor] + b[treatment],
+  a[actor] ~ dnorm(0, 1.5),
+  b[treatment] ~ dnorm(0, 0.5)
+), data = d.list, chains = 4, cores = 4, log_lik = T, messages = F)
+
+# quap model
+m.quap1 <- quap(alist(
+  pulled_left ~ dbinom(1, p),
+  logit(p) <- a[actor] + b[treatment],
+  a[actor] ~ dnorm(0, 1.5),
+  b[treatment] ~ dnorm(0, 0.5)
+), data = d)
+
+# ulam model, with uninformative priors
+m.ulam2 <- ulam(alist(
+  pulled_left ~ dbinom(1, p),
+  logit(p) <- a[actor] + b[treatment],
+  a[actor] ~ dnorm(0, 10),
+  b[treatment] ~ dnorm(0, 0.5)
+), data = d.list, chains = 4, cores = 4, log_lik = T, messages = F)
+
+# quap model, with uninformative priors
+m.quap2 <- quap(alist(
+  pulled_left ~ dbinom(1, p),
+  logit(p) <- a[actor] + b[treatment],
+  a[actor] ~ dnorm(0, 10),
+  b[treatment] ~ dnorm(0, 0.5)
+), data = d)
+
+```
+
+We have our models. Let's first write a small function to extract coefficients and bind two models.
+
+```{r}
+
+extract.coefs <- function(m1, m2) {
+  m.1 <- precis(m1, depth = 2) %>%
+    as_tibble() %>%
+    mutate(coefs = rownames(precis(m1, depth = 2))) %>%
+    janitor::clean_names()
+
+  m.2 <- precis(m2, depth = 2) %>%
+    as_tibble() %>%
+    mutate(coefs = rownames(precis(m2, depth = 2))) %>%
+    janitor::clean_names() %>%
+    dplyr::select(-n_eff, -rhat4)
+  
+  m <- bind_rows(m.1, m.2, .id = "models")
+  
+  return(m)
+}
+
+```
+
+OK, let's start comparing models. First, the coefficients:
+
+```{r, fig.width = 8, fig.height = 4, dpi = 300}
+
+# plot coefficients
+extract.coefs(m.quap1, m.ulam1) %>%
+  ggplot(aes(x = forcats::fct_rev(coefs), y = mean)) +
+  geom_point(size = 1) +
+  geom_linerange(aes(ymin = x5_5_percent, ymax = x94_5_percent)) +
+  coord_flip() + facet_wrap( ~ models) +
+  labs(x = "Coefficients", y = NULL)
+
+```
+
+It seems that the `quap` and `ulam` have the exact same coefficient estimates. What about with the new models with uninformative priors?
+
+```{r, fig.width = 8, fig.height = 4, dpi = 300}
+
+# plot coefficients
+extract.coefs(m.quap2, m.ulam2) %>%
+  ggplot(aes(x = forcats::fct_rev(coefs), y = mean)) +
+  geom_point(size = 1) +
+  geom_linerange(aes(ymin = x5_5_percent, ymax = x94_5_percent)) +
+  coord_flip() + facet_wrap( ~ models) +
+  labs(x = "Coefficients", y = NULL)
+
+```
+
+OK, it seems that everything is, again, same, with the exception of Actor 2. This is the chimpanzee Mr. McElreath warned us about, the one that always pull left in all conditions. Let's look at the posterior distributions for two models.
+
+```{r, fig.width = 10, fig.heigt = 5, dpi = 300}
+
+p1 <- tidy_draws(m.quap2) %>% 
+  janitor::clean_names() %>% select(a_2) %>% 
+  ggplot(aes(x = a_2)) + 
+  geom_histogram(fill = "#9986A5") +
+  labs(title = "Quadratic Approximation", subtitle = "Chimpanzee 2",
+       x = "Values", y = "Count")
+
+p2 <- tidy_draws(m.ulam2) %>% 
+  janitor::clean_names() %>% select(a_2) %>% 
+  ggplot(aes(x = a_2)) + 
+  geom_histogram(fill = "#9986A5") +
+  labs(title = "MCMC Approximation", subtitle = "Chimpanzee 2",
+       x = "Values", y = "Count")
+
+p1 + p2
+
+```
+
+As we can see, MCMC approximation is better to the extent that it pushes the weights to the positive values, rather than the quadratic approximation that assumes Gaussian distribution and gives both positive and negative weights.
+
+## 11M8
+
+It is really fun that McElreath is from cultural evolution, and we get to grapple with problems other than the `mtcars`.
+
+Let's load the data.
+
+```{r}
+
+data(Kline)
+d <- Kline %>%
+  mutate(p = log(population),
+         p = (p - mean(p)) / sd(p),
+         contact_id = ifelse(contact == "high", 2, 1)) %>%
+  filter(culture != "Hawaii")
+d <- list(t = d$total_tools, p = d$p, cid = d$contact_id)
+
+```
+
+OK, we have the data without the Hawaii. I have fit the model with `Stan` before, but there was no easy method for drawing the regression lines. If there is and I do not know about it, I would really appreciate if you let me know!
+
+```{r, message = FALSE, warning = FALSE, results = "hide"}
+
+# # the model with Stan
+# kline.m2 <- rstan::stan(
+#   model_code =
+#   "
+#   data{
+#     int t[9];
+#     vector[9] p;
+#     int cid[9];
+#   }
+#   
+#   parameters{
+#     vector[2] a;
+#     vector[2] b;
+#   }
+#   
+#   model{
+#     vector[9] lambda;
+#     a ~ normal(3, 0.5);
+#     b ~ normal(0, 0.2);
+#     for (i in 1:9) {
+#       lambda[i] = a[cid[i]] + b[cid[i]]*p[i];
+#       lambda[i] = exp(lambda[i]);
+#     }
+#     t ~ poisson(lambda);
+#   }
+#   ",
+#   data = d, chains = 4, warmup = 1000, iter = 2000, cores = 4, refresh = 0
+# )
+
+# the model with ulam
+kline.m <- ulam(
+  alist(
+    t ~ dpois(lambda),
+    log(lambda) <- a[cid] + b[cid]*p,
+    a[cid] ~ dnorm(3, 0.5),
+    b[cid] ~ dnorm(0, 0.2)
+  ), data = d, chains = 4, cores = 4, log_lik = T
+)
+
+```
+
+Let's plot the data to see how the new posterior distribution looks like.
+
+```{r}
+
+# tibble
+kline.tibble <- tibble(t = d$t,
+                       p = d$p,
+                       cid = d$cid)
+
+# predictions
+preds <- kline.tibble %>%
+  left_join(
+    predicted_draws(kline.m, newdata = kline.tibble) %>%
+      group_by(t, p, cid) %>%
+      summarize(
+        mean = mean(.prediction),
+        min = PI(.prediction)[1],
+        max = PI(.prediction)[2]
+      ),
+    by = c("t", "p", "cid")
+  ) %>% mutate(mean = log(mean), min = log(min), max = log(max))
+
+preds %>%
+  ggplot(aes(x = p, y = log(t))) + geom_point() +
+  labs(x = "Population (Log)", y = "Tools", fill = "Contact") +
+  theme(legend.position = "top") +
+  geom_smooth(
+    aes(
+      x = p,
+      y = mean,
+      ymin = min,
+      ymax = max,
+      fill = factor(cid)
+    ),
+    stat = "identity",
+    alpha = 1 / 4
+  ) +
+  scale_fill_manual(values = c("#9986A5", "#79402E"),
+                    labels = c("High", "Low"))
+  
+```
+
+As we can see, the tilt at the end is now gone - Hawaii's influence is washed away when we drop it.
+
+# Hard Problems
+
+## 11H1
+
+I really don't like this data (boring!). Already fit the varying intercepts model above (`m.ulam1`), now I am going to fit the basic model.
+
+```{r, message = FALSE, warning = FALSE, results = "hide"}
+
+# a very very basic very ulam model
+m.ulam3 <- ulam(alist(
+  pulled_left ~ dbinom(1, p),
+  logit(p) <- a + b[treatment],
+  a ~ dnorm(0, 1.5),
+  b[treatment] ~ dnorm(0, 0.5)
+), data = d.list, chains = 4, cores = 4, log_lik = T, messages = F)
+
+```
+
+Instead of giving each actor their own unique intercept, this strategy discards that. Knowing the variation among chimpanzees, I would assume that this should result in worse fit. Let's use WAIC to compare these two models.
+
+```{r}
+
+compare(m.ulam1, m.ulam3) |> round(digits = 2)
+
+```
+
+The assumption is confirmed. The free-intercept model is substantively better than the basic model.
+
+## 11H2
+
+OK, this sounds much more fun! Let's load the data and fit the stuff we are going to need.
+
+```{r, message = FALSE, warning = FALSE, results = "hide"}
+
+# data
+d <- MASS::eagles |> 
+  mutate(
+    P = ifelse(P == "L", 1, 0),
+    A = ifelse(A == "A", 1, 0),
+    V = ifelse(V == "L", 1, 0)
+  )
+d.list <- list(y = d$y, n = d$n, P = d$P, A = d$A, V = d$V)
+
+# quadratic approximation
+eagles.q <- quap(alist(
+  y ~ dbinom(n, p),
+  logit(p) <- a + bp * P + ba * A + bv * V,
+  a ~ dnorm(0, 1.5),
+  c(bp, ba, bv) ~ dnorm(0, 0.5)
+),
+data = d)
+
+# the rock-star mcmc
+eagles.u <- ulam(alist(
+  y ~ dbinom(n, p),
+  logit(p) <- a + bp * P + ba * A + bv * V,
+  a ~ dnorm(0, 1.5),
+  c(bp, ba, bv) ~ dnorm(0, 0.5)
+),
+data = d.list, chains = 4, cores = 4, log_lik = T, messages = F)
+
+```
+
+Here are the answers that I come up with:
+
+**(a)**. We see that coefficients are nearly identical, meaning that quadratic approximation does a fine job of extracting the estimates. I am going to use the `quap` estimates, but using the `mcmc` results provide substantively similar conclusions.
+
+```{r, fig.width = 8, fig.height = 4, dpi = 300}
+
+# plot coefficients
+extract.coefs(eagles.q, eagles.u) %>%
+  ggplot(aes(x = forcats::fct_rev(coefs), y = mean)) +
+  geom_point(size = 1) +
+  geom_linerange(aes(ymin = x5_5_percent, ymax = x94_5_percent)) +
+  coord_flip() + facet_wrap( ~ models) +
+  labs(x = "Coefficients", y = NULL)
+
+```
+
+It seems that high pirate body size increases the chances of success, while high victim body size decreases the chances of success. This makes sense. Slightly less important is the effect of adulthood, which is positive and credible nonetheless. And makes sense, too.
+
+**(b)**. We gotta plot the posterior predictions for both (1) probability of success and (2) count of success:
+
+```{r, fig.width = 12, fig.height = 6, dpi = 300}
+
+# count of success
+p.c <-
+  predicted_draws(eagles.q, newdata = d) |> 
+  mutate(condition = paste0(P, A, V, sep = "")) |> 
+  ggplot(aes(x = condition, y = .prediction)) +
+  stat_pointinterval(col = "#9986A5", .width = .89) +
+  geom_point(aes(y = y), size = 2.5, col = "#79402E") +
+  labs(
+    title = "Predicted Count of Success",
+    subtitle = "89% Credible Intervals",
+    x = "Condition",
+    y = "Prediction"
+  )
+
+# probability of success
+p.p <- 
+  add_linpred_draws(eagles.q, newdata = d) |> 
+  mutate(condition = paste0(P, A, V, sep = "")) |> 
+  ggplot(aes(x = condition, y = .linpred)) +
+  stat_pointinterval(col = "#9986A5", .width = .89) +
+  geom_point(aes(y = y/n), size = 2.5, col = "#79402E") +
+  labs(
+    title = "Predicted Probability of Success",
+    subtitle = "89% Credible Intervals",
+    x = "Condition",
+    y = "Prediction"
+  )
+
+p.c + p.p
+
+```
+
+The probabilities, of course, do not consider the total number of attempts, while working with counts might just give us the impression that the success rate is low. Steve is right to complain about this. This is complicated (sigh).
+
+**(c)**. Let's try to improve the model with an interaction, and compare the models.
+
+```{r}
+
+# quadratic approximation with an interaction
+eagles.i <- quap(alist(
+  y ~ dbinom(n, p),
+  logit(p) <- a + bp * P + ba * A + bv * V + bi * P * A,
+  a ~ dnorm(0, 1.5),
+  c(bp, ba, bv) ~ dnorm(0, 0.5),
+  bi ~ dnorm(0, 1)
+),
+data = d)
+
+# comparisons
+compare(eagles.q, eagles.i) |> round(2)
+
+```
+
+There is not much difference between the models, and although the no-interaction model is preferred, the difference is marginal.
+
+## 11H3
+
+A similar routine. I am going to load the data first, standardize the predictors, create a list and fit models.
+
+```{r, message = FALSE, warning = FALSE, results = "hide"}
+
+# data
+data(salamanders)
+d <- salamanders |> 
+  mutate(
+    PCTCOVER = standardize(PCTCOVER), FORESTAGE = standardize(FORESTAGE)
+  )
+d.list <- list(
+  SALAMAN = d$SALAMAN, PCTCOVER = d$PCTCOVER, FORESTAGE = d$FORESTAGE
+)
+
+# quadratic approximation
+sal.q <- quap(alist(
+  SALAMAN ~ dpois(lambda),
+  log(lambda) <- a + b * PCTCOVER,
+  a ~ dnorm(0, 1),
+  b ~ dnorm(0, 1)
+), data = d)
+
+# the rock-star mcmc
+sal.u <- ulam(alist(
+  SALAMAN ~ dpois(lambda),
+  log(lambda) <- a + b * PCTCOVER,
+  a ~ dnorm(0, 1),
+  b ~ dnorm(0, 1)
+),
+data = d.list, chains = 4, cores = 4, log_lik = T, messages = F)
+
+```
+
+**(a)**. OK, let's compare the models. The coefficients again look pretty similar, so I'll go with the quadratic approximation for ease:
+
+```{r, fig.width = 8, fig.height = 4, dpi = 300}
+
+# plot coefficients
+extract.coefs(sal.q, sal.u) %>%
+  ggplot(aes(x = forcats::fct_rev(coefs), y = mean)) +
+  geom_point(size = 1) +
+  geom_linerange(aes(ymin = x5_5_percent, ymax = x94_5_percent)) +
+  coord_flip() + facet_wrap( ~ models) +
+  labs(x = "Coefficients", y = NULL)
+
+```
+
+It is time to plot the ground cover against the number of salamanders, and see the performance of the model visually. The plot below shows that the model does a fine job of estimation, though the variance in the right-side is a bit much to cover with this predictor.
+
+```{r, fig.width = 8, fig.height = 6, dpi = 300}
+
+sal.pred <- add_linpred_draws(sal.q, newdata = d)
+
+d |>
+  ggplot(aes(x = PCTCOVER, y = SALAMAN)) +
+  geom_point(size = 2, col = "#79402E") +
+  labs(x = "Percent Ground", y = "The Number of Salaman") +
+  stat_lineribbon(
+    fill = "gray60",
+    data = sal.pred,
+    aes(x = PCTCOVER, y = .linpred),
+    .width = 0.89,
+    alpha = 0.25
+  )
+
+```
+
+**(b)**. Not sure about the relationship between forest age and ground cover. Preliminary examination of their plot showed that ground cover is a proxy for forest age (particularly the logged age). Don't think it's gonna change the dynamics much, but let's see:
+
+```{r}
+
+sal.n <- quap(alist(
+  SALAMAN ~ dpois(lambda),
+  log(lambda) <- a + b * PCTCOVER + c * FORESTAGE,
+  a ~ dnorm(0, 1),
+  b ~ dnorm(0, 1),
+  c ~ dnorm(0, 1)
+), data = d)
+
+# coefficients
+precis(sal.n) |> round(2)
+
+```
+
+Not much. We do not need the forest age for this model.
+
+## 11H4
+
+Let's load the Grants data and draw the DAG. The basic pipe structure will do the work. And fit two models.
+
+```{r, fig.width = 5, fig.height = 3, dpi = 300}
+
+# data and DAGs
+data(NWOGrants)
+d <- list(
+  gender = NWOGrants$gender,
+  applications = NWOGrants$applications,
+  awards = NWOGrants$awards,
+  disciplines = NWOGrants$discipline
+)
+
+dag <- dagitty(
+  "dag{
+  Gender -> Discipline -> Awards
+  Gender -> Awards
+  }")
+coordinates(dag) <- list(x = c(Gender = 0, Discipline = 1, Awards = 2),
+                         y = c(Gender = 1, Discipline = 0, Awards = 1))
+drawdag(dag)
+
+```
+
+```{r, message = FALSE, warning = FALSE, results = "hide"}
+
+# models
+grantm1 <- ulam(alist(
+  awards ~ dbinom(applications, p),
+  logit(p) <- g[gender],
+  g[gender] ~ dnorm(0, 1)
+), data = d, chains = 4, cores = 4, log_lik = T, messages = F)
+
+grantm2 <- ulam(alist(
+  awards ~ dbinom(applications, p),
+  logit(p) <- g[gender] + d[disciplines],
+  g[gender] ~ dnorm(0, 1),
+  d[disciplines] ~ dnorm(0, 1)
+), data = d, chains = 4, cores = 4, log_lik = T, messages = F)
+
+```
+
+OK, the plots show that the adjustment of the disciplines mediates some portions of the total effects of gender. This suggests that, although there are total disparities among men and women, this is partly dependent on the structure of the particular disciplines.
+
+There might be some affirmative programs that encourage women to apply for under-awarded disciplines, but blah blah...
+
+```{r, fig.width = 10, fig.height = 6, dpi = 300}
+
+p1 <-
+  add_linpred_draws(grantm1, newdata = d, transform = T) |>
+  group_by(.draw, disciplines) |>
+  pivot_wider(
+    id_cols = c(.draw, disciplines),
+    names_from = gender,
+    values_from = .linpred
+  ) |> 
+  mutate(diff = f - m) |> 
+  ggplot(aes(x = diff)) + geom_density(fill = "#9986A5") +
+  geom_vline(aes(xintercept = 0), linetype = "dashed", linewidth = 1) +
+  labs(x = 'Difference Between Men and Women', y = 'Density', title = 'No Departmental Adjustment') +
+  xlim(-0.1, 0.05)
+
+p2 <-
+  add_linpred_draws(grantm2, newdata = d, transform = T) |>
+  group_by(.draw, disciplines) |>
+  pivot_wider(
+    id_cols = c(.draw, disciplines),
+    names_from = gender,
+    values_from = .linpred
+  ) |> 
+  mutate(diff = f - m) |>
+  ggplot(aes(x = diff)) + geom_density(fill = "#9986A5") +
+  geom_vline(aes(xintercept = 0), linetype = "dashed", linewidth = 1) +
+  labs(x = 'Difference Between Men and Women', y = 'Density', title = 'With Departmental Adjustment') +
+  xlim(-0.1, 0.05)
+
+p1 + p2
+
+```
+
+## 11H5
+
+Let's draw our DAG, as it is the first fire of every ritual:
+
+```{r, fig.width = 5, fig.height = 3, dpi = 300}
+
+dag <- dagitty(
+  "dag{
+  Gender -> Discipline -> Awards
+  Gender -> Awards
+  Career -> Discipline
+  Career -> Awards
+  }")
+coordinates(dag) <- list(x = c(Gender = 0, Discipline = 1, Awards = 2, Career = 2),
+                         y = c(Gender = 1, Discipline = 0, Awards = 1, Career = 0))
+drawdag(dag)
+
+```
+
+As we can see from the DAG, conditioning on the $Discipline$ opens the path from $Career$, polluting our estimates with a collider bias. Thus, if we condition on $Discipline$ but cannot observe $Career$, we will not have an unconfounded effect of $Gender$.
+
+## 11H6
+
+Another nice problem. Can we just stick to the evolutionary examples? Let's load the data.
+
+```{r}
+
+data(Primates301)
+d <- Primates301 |> 
+  select(social_learning, brain, research_effort) |> 
+  drop_na()
+d.list <- list(
+  learning = d$social_learning,
+  lbrain = log(d$brain),
+  lefforts = log(d$research_effort)
+)
+
+```
+
+**(a)**. We will first model the number of social learning as a function of (logged) brain size. The first chunk below fits the model using `ulam` (my patience for `stan` is gone for now), and the second chunk plots the results for ease of understanding.
+
+```{r, message = FALSE, warning = FALSE, results = "hide"}
+
+primate.m1 <- ulam(
+  alist(
+    learning ~ dpois(lambda),
+    log(lambda) <- a + b*lbrain,
+    a ~ dnorm(0, 1),
+    b ~ dnorm(0, 1)
+  ), data = d.list, chains = 4, cores = 4, messages = F
+)
+
+```
+
+```{r, fig.width = 12, fig.height = 6, dpi = 300}
+
+d.pred <- add_predicted_draws(newdata = d.list, primate.m1)
+
+d.list |> 
+  as.data.frame() |> 
+  ggplot(aes(x = lbrain, y = learning)) +
+  geom_point(size = 2, col = "#79402E") +
+  stat_lineribbon(
+    data = d.pred,
+    aes(x = lbrain, y = .prediction),
+    .width = 0.89,
+    color = "gray", alpha = 0.25
+  ) +
+  labs(x = "Brain (Logged)", y = "Learning") +
+  theme(legend.position = "none")
+
+```
+
+Well, really bad visuals! But once we look at the coefficients, we see that there is a strong effect of brain on social learning.
+
+**(b)**. This time I am gonna go with the `precis` output. Let's add our variable and estimate.
+
+```{r, message = FALSE, warning = FALSE, results = "hide"}
+
+primate.m2 <- ulam(
+  alist(
+    learning ~ dpois(lambda),
+    log(lambda) <- a + b*lbrain + c*lefforts,
+    a ~ dnorm(0, 1),
+    b ~ dnorm(0, 1),
+    c ~ dnorm(0, 1)
+  ), data = d.list, chains = 4, cores = 4, messages = F
+)
+
+```
+
+```{r}
+
+# model 1
+precis(primate.m1) |> round(2)
+
+# model 2
+precis(primate.m2) |> round(2)
+
+```
+
+Wow! The effects of brain size is highly reduced compared to the research efforts! This is curious. Let's go for a DAG.
+
+**(c)**. 
+
+```{r, fig.width = 5, fig.height = 3, dpi = 300}
+
+dag <- dagitty(
+  "dag{
+  Observations [unobserved]
+  Brain -> Learning
+  Brain -> Efforts
+  Efforts -> Observations
+  Observations -> Learning
+  }")
+coordinates(dag) <- list(x = c(Brain = 0, Efforts = 0, Observations = 1, Learning = 1),
+                         y = c(Brain = 1, Efforts = 0, Observations = 0, Learning = 1))
+drawdag(dag, radius = 12)
+
+```
+
+OK, if my intuition is true, this is what happened: there is a direct and strong relationship between $brain$ and $learning$. Yet, primates with higher brains attract more $effort$, which in turn results in more $observation$. What we see as $efforts$ is the effect of $observations$.
+
+Thank you!

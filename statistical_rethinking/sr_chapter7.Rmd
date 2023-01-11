@@ -1,0 +1,577 @@
+---
+title: "Soc722 - SR Chapter 7"
+author: "Turgut Keskintürk"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: united
+    toc: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(fig.align = "center")
+
+# load the relevant packages
+pacman::p_load(tidyverse, rethinking, tidybayes, tidybayes.rethinking, dagitty, gridExtra)
+theme_set(theme_bw()) # theme set for the plots
+
+```
+
+Hello there! Let's start with our exercises for McElreath's *Statistical Rethinking*, Chapter 7.
+
+# Easy Problems
+
+## 7E1
+
+McElreath defined information as "the reduction in uncertainty when we learn an outcome" (205).
+
+Here are the three motivating criteria that define *information entropy*:
+
+1) The uncertainty measure should be continuous; otherwise, we could end up with certain threshold changes around discontinuities.
+2) It is also intuitive to say that, as long as the number of events *N* increases, the uncertainty also increases, meaning that information entropy should be a monotonically non-decreasing function of the number of events.
+3) The uncertainty should also be additive, i.e., the sum of uncertainty of *X* events should be the sum of their individual uncertainties.
+
+## 7E2
+
+The entropy measure that we have can be expressed as follows:
+
+$$
+H(p) = -Elog(p_i) = -\sum_{i=1}^{n} p_ilog(p_i)
+$$
+
+This equation tells us that, the negative times the sum of multiplication of probabilities and log probabilities will give us an entropy measure.
+
+For the coin toss example, we have two probabilities (heads and tails): *p* for 0.7, *q* for 0.3. Let's put them into our formula:
+
+$$
+H(p) = -(0.7log(0.7) + 0.3log(0.3))
+$$
+
+This is just algebra, resulting in the entropy `-(0.7*log(0.7)+0.3*log(0.3))` = **0.61**.
+
+## 7E3
+
+I will use the same information entropy equation described above, this time with 4 different probabilities of a four-sided die.
+
+Here is the formula:
+
+$$
+H(p) = -(p_1log(p_1) + p_2log(p_2) + p_3log(p_3) + p_4log(p_4))
+$$
+
+This results in the entropy `-(0.20*log(0.20)+0.25*log(0.25)+0.25*log(0.25)+0.30*log(0.30))` = **1.37**.
+
+## 7E4
+
+OK, we now drop the possibility of $p_4$, and allocate equal probabilities of the other sides; $p_1$, $p_2$, and $p_3$:
+
+$$
+H(p) = -(p_1log(p_1) + p_2log(p_2) + p_3log(p_3))
+$$
+This results in the entropy `-(1/3*log(1/3)+1/3*log(1/3)+1/3*log(1/3))` = **1.09**.
+
+The fact that we reduced the number of potential events *and* the new composition of probabilities decreased our entropy.
+
+# Medium Problems
+
+## 7M1
+
+Here is the definition for the AIC:
+
+$$
+AIC = -2lppd + 2p
+$$
+
+Once I write it, I see that this is indeed really elegant. The equation has two components: the first term ($-2lppd$), log pointwise posterior predictive density, regulates the model fit, while the second term ($2p$) regulates overfitting penalty.
+
+Here is the WAIC definition, which basically revises the second term:
+
+$$
+WAIC(y, \theta) = -2(lppd - \sum_{i}var_\theta\ \text{log}p(y_i|\theta))
+$$
+
+This time, the overfitting penalty sums, for each observation, the variance in log-probabilities. This allows us to assign individual penalty scores for each observation, which is really neat!
+
+AIC makes at least three assumptions: (a) flat priors, (b) multivariate Guassian posterior distribution, and (c) *N* > *k*. WAIC, on the other hand, makes only the assumption (c), which is why WAIC approximates AIC when (a) and (b) are also met.
+
+## 7M2
+
+*Model Selection* refers to the practice where we choose the model with the lowest information criterion value, and discarding others. I am personally guilty of this, as my general approach to LCA is just to pick the model with the lowest BIC value. 
+
+This has at least two problems: (a) this approach discards the relative information contained in the differences between different model criterion values, which allows us to make principled choices; (b) also, the information criteria are predictive scores, which is not generally equal to causal inference. We can instead use *Model Comparison*, a principled approach that helps us look at multiple models to understand (a) the conditional implications contained in our causal model, and (b) relative fit scores across different models.
+
+## 7M3
+
+Neat question! OK, let me first think about the definition of *lppd*, which we see in all information criteria:
+
+$$
+lppd(y, \theta) = \sum_{i}\text{log}\frac{1}{S}\sum_{s}p(y_i|\theta_s)
+$$
+Two important things to notice in this example are the terms $S$, which is the number of samples and $y_i$, which is the observations we evaluate with the parameter set $\theta_s$. This shows us that *lppd* depends on the sample itself!
+
+What does this mean? As information criteria are based on *deviance*, changing the sample size necessarily affects the calculation of deviance. We actually saw an example of what would happen in class, when Steve used different GSS years to compare two models.
+
+I am going to do some experiments as well, but allow me to be a bit old-fashioned and use loops in the code below:
+
+```{r}
+
+waic_values <- as.data.frame(matrix(nrow = 41, ncol = 2))
+colnames(waic_values) <- c("run", "waic")
+waic_values <- waic_values %>% mutate(run = 1:n()) # some unique ids for each row
+
+loopfr <- 1
+set.seed(11235)
+for (s in seq(from = 100, to = 500, by = 10)) {
+  sim_data <- tibble(x = rnorm(s),
+                     y = rnorm(s, mean = x)) %>% mutate(across(everything(), standardize))
+  
+  mod_data <- quap(alist(
+    y ~ dnorm(mu, sigma),
+    mu <- a + b * x,
+    a ~ dnorm(0, 1),
+    b ~ dnorm(0, 0.5),
+    sigma ~ dexp(1)
+  ),
+  data = sim_data)
+  
+  waic_values[loopfr, 2] <- WAIC(mod_data)[[1]]
+  loopfr <- loopfr + 1
+}
+
+```
+
+OK, what I did was to create some datasets from *N* = 100 to *N* = 5000, so that we can see the change in WAIC as a function of sample size. Let's plot this change using the dataset I just created above.
+
+```{r, fig.width = 7.5, fig.height = 5, dpi = 250}
+
+waic_values %>%
+  ggplot(aes(x = run, y = waic)) +
+  geom_point(size = 1) +
+  geom_line(group = 1) +
+  labs(title = "Change in WAIC Across Sample Sizes", x = "Run", y = "WAIC")
+
+```
+
+As we can see, WAIC increases with respect to sample size.
+
+## 7M4
+
+Let's use the same approach as above, but this time vary the standard deviation of our prior. Also, since the number of observations can easily flood our analytic approach, this time I reduce N to 50. 
+
+```{r}
+
+penalty_values <- as.data.frame(matrix(nrow = 10, ncol = 3))
+colnames(penalty_values) <- c("run", "waic", "psis")
+penalty_values <- penalty_values %>% mutate(run = 1:n()) # some unique ids for each row
+
+# this time, we'll have the same dataset over and over
+set.seed(11235)
+sim_data <- tibble(x = rnorm(50),
+                   y = rnorm(50, x)) %>% mutate(across(everything(), standardize))
+
+loopfr <- 1
+for (prior in seq(from = 1, to = 0.1, length.out = 10)) {
+  mod_data <- quap(alist(
+    y ~ dnorm(mu, 1), # sigma value kept getting errors of non-convergence, so I constrained it to be 1
+    mu <- a + b * x,
+    a ~ dnorm(0, prior), # what we vary
+    b ~ dnorm(0, prior)  # what we vary
+  ),
+  data = sim_data)
+  
+  penalty_values[loopfr, 2] <- WAIC(mod_data)[1, 3]
+  penalty_values[loopfr, 3] <- PSIS(mod_data)[1, 3]
+  loopfr <- loopfr + 1
+}
+
+```
+
+I basically fitted several models by varying the standard deviations of the $\alpha$ and $\beta$ measures. Here is the graph of the penalty terms.
+
+```{r, fig.width = 7.5, fig.height = 5, dpi = 250}
+
+penalty_values %>%
+  pivot_longer(cols = c("waic", "psis"), names_to = "ic", values_to = "penalty") %>% 
+  ggplot(aes(x = run, y = penalty)) +
+  geom_point(size = 1) +
+  geom_line(group = 1) +
+  labs(title = "Change in Penalty Terms Across Different Priors", x = "Run", y = "Penalty") +
+  facet_wrap(~ ic, nrow = 1)
+
+```
+
+Voilà! As we can see, when we concentrate the priors, the effective number of parameters decrease. The reason is simple: regularizing priors basically make our models less flexible (we tilt to less variance in the bias-variance trade-off), which makes *p* less effective.
+
+## 7M5
+
+McElreath uses two cool terms to describe the data: *regular* and *irregular*. 
+
+We are interested in the regular portion of the data, because the rest is simply noise, and we want real patterns! Providing informative priors helps us discard these irregular noises, and tells the model to ignore if something is utterly ridiculous. 
+
+This, in the end, helps defeat overfitting, simply because we discard the noise and excavate the regular patterns.
+
+## 7M6
+
+Now, think about the answer in *7M5*. If there are indeed regular and irregular features in the data, an informative prior helps us retrieve the regular features. However, it does this by discarding surprise information. Suppose now that we provide overly informative priors.
+
+In this case, we tell the model to ignore too much information, which can include some regular features. This means underfitting.
+
+# Hard Problems
+
+## 7H1
+
+Well, the Wall Street Journal is not known to be super accurate, but let's try to fit a curve for this data. First, some prep.
+
+```{r}
+
+data(Laffer)
+d <- Laffer
+
+```
+
+We have two variables, `tax_rate` and `tax_revenue`. Let's plot the relation.
+
+```{r, fig.width = 2.5, fig.height = 2.5, dpi = 250}
+
+ggplot(d, aes(x = tax_rate, y = tax_revenue)) +
+  geom_point() +
+  labs(x = "Tax Rate", y = "Tax Revenue")
+
+```
+
+I'll use linear, quadratic, and cubic functions to express this data, first using `geom_smooth` and then through actual fits.
+
+```{r, fig.width = 7.5, fig.height = 2.5, dpi = 250}
+
+p1 <- ggplot(d, aes(x = tax_rate, y = tax_revenue)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x) +
+  labs(title = "Linear", x = "Tax Rate", y = "Tax Revenue")
+
+p2 <- ggplot(d, aes(x = tax_rate, y = tax_revenue)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x + I(x^2)) +
+  labs(title = "Quadratic", x = "Tax Rate", y = "")
+
+p3 <- ggplot(d, aes(x = tax_rate, y = tax_revenue)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x + I(x^2) + I(x^3)) +
+  labs(title = "Cubic", x = "Tax Rate", y = "")
+
+grid.arrange(p1, p2, p3, nrow = 1)
+
+```
+
+It seems that quadratic model does the job, and my visual intuition sides with the argument that the cubic model is overfitting. We'll see.
+
+Let's use the `rethinking` package and compare model fits.
+
+```{r}
+
+set.seed(11235)
+d <- d %>% mutate(across(everything(), standardize))
+
+m1 <- quap(alist(
+  tax_revenue ~ dnorm(mu, sigma),
+  mu <- a + b*tax_rate,
+  a ~ dnorm(0, 0.2),
+  b ~ dnorm(0, 0.5),
+  sigma ~ dexp(1)
+), data = d)
+
+m2 <- quap(alist(
+  tax_revenue ~ dnorm(mu, sigma),
+  mu <- a + b*tax_rate + bpol1*I(tax_rate^2),
+  a ~ dnorm(0, 0.2),
+  c(b, bpol1) ~ dnorm(0, 0.5),
+  sigma ~ dexp(1)
+), data = d)
+
+m3 <- quap(alist(
+  tax_revenue ~ dnorm(mu, sigma),
+  mu <- a + b*tax_rate + bpol1*I(tax_rate^2) + bpol2*I(tax_rate^3),
+  a ~ dnorm(0, 0.2),
+  c(b, bpol1, bpol2) ~ dnorm(0, 0.5),
+  sigma ~ dexp(1)
+), data = d)
+
+```
+
+We fitted the models. Let's now compare them, using the, let's face it, very convenient function `compare`.
+
+```{r}
+
+set.seed(11235)
+compare(m1, m2, m3)
+
+```
+
+Two things to notice. First, it seems that It seems that WAIC slightly prefers the linear model (which is a shame) with a weight of 0.54. However, if we look at the actual scores and their errors, we see that there is not actual evidence for the best model.
+
+## 7H2
+
+Huh! That outlier was really bothering me. Let's test this using PSIS and WAIC.
+
+```{r}
+
+d.outlier <- tibble(
+  id = c(1:nrow(d)),
+  m1.psisk = PSIS(m1, pointwise = T)$k,
+  m1.waicp = WAIC(m1, pointwise = T)$penalty,
+  m2.psisk = PSIS(m2, pointwise = T)$k,
+  m2.waicp = WAIC(m2, pointwise = T)$penalty,
+  m3.psisk = PSIS(m3, pointwise = T)$k,
+  m3.waicp = WAIC(m3, pointwise = T)$penalty,
+)
+
+```
+
+OK, we have the individual points. Let's see the index of the row for each value to determine the outlier on all cases.
+
+```{r}
+
+d.outlier %>% 
+  pivot_longer(cols = -c(id), names_to = "measures", values_to = "values") %>%
+  group_by(measures) %>%
+  arrange(desc(values)) %>%
+  slice(1)
+
+```
+
+As we see, in all models and specifications, the country with the index number **12** is the outlier. Let's use robust regression with a Student's t distribution to refit this model, and inspect the results.
+
+```{r}
+
+set.seed(11235)
+
+m1t <- quap(alist(
+  tax_revenue ~ dstudent(2, mu, sigma),
+  mu <- a + b*tax_rate,
+  a ~ dnorm(0, 0.2),
+  b ~ dnorm(0, 0.5),
+  sigma ~ dexp(1)
+), data = d)
+
+m2t <- quap(alist(
+  tax_revenue ~ dstudent(2, mu, sigma),
+  mu <- a + b*tax_rate + bpol1*I(tax_rate^2),
+  a ~ dnorm(0, 0.2),
+  c(b, bpol1) ~ dnorm(0, 0.5),
+  sigma ~ dexp(1)
+), data = d)
+
+m3t <- quap(alist(
+  tax_revenue ~ dstudent(2, mu, sigma),
+  mu <- a + b*tax_rate + bpol1*I(tax_rate^2) + bpol2*I(tax_rate^3),
+  a ~ dnorm(0, 0.2),
+  c(b, bpol1, bpol2) ~ dnorm(0, 0.5),
+  sigma ~ dexp(1)
+), data = d)
+
+```
+
+Neat! Let's compare these models in one batch now, to see their relationships.
+
+```{r}
+
+set.seed(11235)
+compare(m1, m1t, m2, m2t, m3, m3t)
+
+```
+
+We can see that, in all cases, robust regressions perform much better than the other specifications.
+
+## 7H3
+
+Let's first create a tibble for our good old ornithologists.
+
+```{r}
+
+rm(list = ls())
+
+birds <- tibble(
+  islands = c(1, 2, 3),
+  speciesA = c(0.2, 0.8, 0.05),
+  speciesB = c(0.2, 0.1, 0.15),
+  speciesC = c(0.2, 0.05, 0.7),
+  speciesD = c(0.2, 0.025, 0.05),
+  speciesE = c(0.2, 0.025, 0.05)
+)
+
+```
+
+OK, we have the data. We are first asked to compute each island's bird distribution. Let's look at the entropy values for the islands.
+
+```{r}
+
+-1*sum(birds[1, -1] * log(birds[1, -1]))
+-1*sum(birds[2, -1] * log(birds[2, -1]))
+-1*sum(birds[3, -1] * log(birds[3, -1]))
+
+```
+
+As we can see, the entropy value is highest for Island 1 and lowest for Island 2. Let's think about why this happened. Look at the probabilities in Island 1: all birds are equally possible. What about Island 2? We generally (4 in 5 times) see Species A.
+
+This tells us something very intuitive: *if* possibilities are equally likely, then our uncertainty is the highest.
+
+Second, we are asked to use each island's bird distribution to predict the two. This means (3 chooses 2) 6 different models. We have the formula for the KL divergence in the book, which I reproduce here below:
+
+$$
+D_\text{KL}(p, q) = \sum_ip_i(log(p_i)-log(q_i)) = \sum_ip_ilog\frac{p_i}{q_i} 
+$$
+We can write a simple function for this:
+
+```{r}
+
+kl_div <- function(p, q){sum(p*(log(p)-log(q)))}
+
+```
+
+OK, we have our function. Let's compute the divergence scores for each column pair, and present them in a basic tibble.
+
+```{r}
+
+tibble(
+  Island1_Island2 = kl_div(birds[1, -1], birds[2, -1]),
+  Island1_Island3 = kl_div(birds[1, -1], birds[3, -1]),
+  Island2_Island1 = kl_div(birds[2, -1], birds[1, -1]),
+  Island2_Island3 = kl_div(birds[2, -1], birds[3, -1]),
+  Island3_Island1 = kl_div(birds[3, -1], birds[1, -1]),
+  Island3_Island2 = kl_div(birds[3, -1], birds[2, -1]),
+) %>% t()
+
+```
+
+We can read the first Island index as the target (p) and the second Island index as the model (q), so the lowest divergence score occurred when the model (q) is Island 1 (see the results in index = 3 and index = 5). 
+
+This means that Island 1 is the best predictor. Why? Look at the `birds` dataset and remember the Mars example from the book. The fact that all the possibilities are equal in Island 1 makes it possible for us not to be too surprised to see birds in other islands!
+
+## 7H4
+
+Alright, happiness data again! Let's set-up the data, and fit the earlier models again.
+
+```{r}
+
+d <- sim_happiness(seed = 1977, N_years = 1000)
+d <- d %>% 
+  filter(age > 17) %>% 
+  mutate((age - 18)/65-18) %>%
+  mutate(mid = married + 1)
+
+# model 1
+
+m1 <- quap(alist(
+  happiness ~ dnorm(mu, sigma),
+  mu <- a[mid] + bA*age,
+  a[mid] ~ dnorm(0, 1),
+  bA ~ dnorm(0, 2),
+  sigma ~ dexp(1)
+), data = d)
+
+# model 2
+
+m2 <- quap(alist(
+  happiness ~ dnorm(mu, sigma),
+  mu <- a + bA * age,
+  a ~ dnorm(0, 1),
+  bA ~ dnorm(0, 2),
+  sigma ~ dexp(1)
+), data = d)
+
+```
+
+OK, we fitted our models. Let's inspect the results and look at the WAIC comparison.
+
+```{r}
+
+precis(m1, depth = 2) %>% round(2)
+precis(m2, depth = 2) %>% round(2)
+compare(m1, m2)
+
+```
+
+Remember that the first model conditions on a collider (marriage status), while the second model does not. And also remember that McElreath created this dataset, so we *know* that marriage status is a collider. Causally, the second model is the correct one.
+
+Yet, when we look at the WAIC, it is crystal clear that the information criterion prefers the first model. What's going on?
+
+The reason for this is that, even though marriage status is a collider, it increases *prediction*, and as long as prediction increases, the IC always pushes us in that direction. However, prediction and explanation do not always agree. As it is the case here.
+
+## 7H5
+
+Yes, I really like this data (and thanks to the ecologists!).
+
+```{r}
+
+data(foxes)
+d <- foxes %>%
+  mutate(across(.cols = c(avgfood, groupsize, area, weight), standardize))
+rm(foxes) # hell...
+
+```
+
+Let's fit the models McElreath asked us to do. So many models, though, and I *really* miss `lm` at this point.
+
+```{r}
+
+set.seed(11235)
+
+m1 <- quap(alist(
+  weight ~ dnorm(mu, sigma),
+  mu <- a + b1*avgfood + b2*groupsize + b3*area,
+  a ~ dnorm(0, 1),
+  c(b1, b2, b3) ~ dnorm(0, 1),
+  sigma ~ dexp(1)
+), data = d)
+
+m2 <- quap(alist(
+  weight ~ dnorm(mu, sigma),
+  mu <- a + b1*avgfood + b2*groupsize,
+  a ~ dnorm(0, 1),
+  c(b1, b2) ~ dnorm(0, 1),
+  sigma ~ dexp(1)
+), data = d)
+
+m3 <- quap(alist(
+  weight ~ dnorm(mu, sigma),
+  mu <- a + b1*avgfood + b3*area,
+  a ~ dnorm(0, 1),
+  c(b1, b3) ~ dnorm(0, 1),
+  sigma ~ dexp(1)
+), data = d)
+
+m4 <- quap(alist(
+  weight ~ dnorm(mu, sigma),
+  mu <- a + b1*avgfood,
+  a ~ dnorm(0, 1),
+  b1 ~ dnorm(0, 1),
+  sigma ~ dexp(1)
+), data = d)
+
+m5 <- quap(alist(
+  weight ~ dnorm(mu, sigma),
+  mu <- a + b3*area,
+  a ~ dnorm(0, 1),
+  b3 ~ dnorm(0, 1),
+  sigma ~ dexp(1)
+), data = d)
+
+```
+
+Pheww! A lot of models. Let's compare them using WAIC and the legendary `compare` function.
+
+```{r}
+
+set.seed(11235)
+compare(m1, m2, m3, m4, m5)
+
+```
+
+OK, we see that the second model, where we have $avgfood$ and $groupsize$ as predictors, is the best model, closely followed by the first model, where we also have $area$. **However**, once we inspect the standard errors, we see that actually, there is no preference for a particular model.
+
+Still, we can see that model 1 and model 2 are grouped together, and they are slightly better.
+
+Remember the DAG from the previous chapter (see Chapter 6 homework in the folder), where we saw that if we want to include $groupsize$, we needed to include $avgfood$ in our model. It is thus no surprising that these two models are clumped together.
+
+Thank you!
