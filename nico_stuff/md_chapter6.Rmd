@@ -1,0 +1,151 @@
+---
+title: "Soc723 - MD Chapter 6"
+author: "Turgut Keskintürk"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: united
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(fig.align = "center")
+
+# load the relevant packages
+pacman::p_load(tidyverse, janitor, broom, patchwork, hrbrthemes, knitr)
+theme_set(theme_ipsum_rc()) # theme set for the plots
+
+```
+
+Hello there! Let's start with our exercises for Chapter 6.
+
+```{r}
+
+d <- read.csv(
+  "https://raw.githubusercontent.com/vaiseys/223_course/main/Data/gender_employment.csv"
+) |> clean_names()
+
+```
+
+# Question 1
+
+Let's fit our model:
+
+```{r}
+
+# some data tweaks
+d <- d %>%
+  mutate(
+    major_category = as.factor(major_category),
+    major_category = relevel(major_category, ref = "Management, Business, and Financial")
+  )
+
+# fit the data, and name it something other than nico's ridiculously long name
+fit <- lm(wage_percent_of_male ~ year + major_category, data = d)
+
+# show me
+fit |> tidy() |> kable(digits = 2, align = "lcccc")
+
+```
+
+OK, it seems that there is not much trend overall in terms of year, even though there is a slight (very slight!) positive take. It is insane that the Management degrees produce such an asshole wage distribution (though not insane perhaps, but predictable).
+
+Some algebraic operations gave us the following responses: (a) **79.46** for Sales and (b) **82.4** for Service.
+
+# Question 2
+
+Let's see if the parallel trends assumption is warranted:
+
+```{r, fig.width = 8, fig.height = 8, dpi = 300}
+
+d |>
+  ggplot(aes(x = year, y = wage_percent_of_male)) +
+  geom_jitter(alpha = 0.1, col = "steelblue") +
+  geom_smooth(method = "lm", col = "orange") +
+  labs(title = "Women's Earnings with Respect to Men's",
+       y = "% of Men's Income",
+       x = "Year") +
+  facet_wrap(~major_category, nrow = 4)
+
+```
+
+Seems like it, with the exception of `Natural Resources, Constuction, and Maintenance`, which shows an uptick for this category.
+
+# Question 3
+
+Let's do the interaction and inspect the results.
+
+```{r}
+
+# fit
+int <- lm(wage_percent_of_male ~ year * major_category, data = d)
+
+# show me
+int |> tidy() |> kable(digits = 2, align = "lcccc")
+
+```
+
+Some algebraic operations gave us the following responses: (a) **96.06** for Computing and (b) **81.74** for Service. Wow!
+
+By the way, it would be good to center the `year` variable at 0, as these coefficients are insane.
+
+# Question 4
+
+We do not want to overfit our model to the data, and well, *less is better.*
+
+# Question 5
+
+We are still interested in how `wage_percent_of_male` changed across these years. Let's fit some models and describe:
+
+```{r}
+
+# fits
+fit1 <- lm(wage_percent_of_male ~ year, data = d)
+
+# show me
+fit1 |> tidy() |> kable(digits = 2, align = "lcccc")
+
+```
+
+As we talked above, there is a slight uptick, but it's not much clear what's going on with this model. We are going to add `percent_female` to our model toolkit. Let's see the correlation among these variables.
+
+```{r}
+
+d %>% 
+  select(year, wage_percent_of_male, percent_female) %>% 
+  cor(use = "complete.obs")
+
+```
+
+OK, the correlations are pretty low, though `percent_female` might pick up some of the variation here. Let's build:
+
+```{r}
+
+# fits
+fit2 <- lm(wage_percent_of_male ~ year + percent_female, data = d)
+
+# show me
+fit2 |> tidy() |> kable(digits = 2, align = "lcccc")
+
+```
+
+No, practically no change. This model basically means that conditioning on percent_female does not change `year` effects.
+
+# Question 6
+
+R-Squared is, as the term implies, the square of R (lol), which is the explained variance in the dependent variable that can be attributed to the set of independent variables used in our model. This is a sloppy definition, but it should work.
+
+Let's compare the model $R^2$:
+
+```{r}
+
+glance(fit1)$r.squared
+glance(fit2)$r.squared
+
+```
+
+Not surprisingly, the $R^2$ of the second model is higher than the first model. I do not want to conclude anything from this, to be honest. Just that `percent_women` has some sort of relationship to the outcome, and it is nice to pick that up.
+
+Thank you!

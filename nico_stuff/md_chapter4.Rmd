@@ -7,11 +7,12 @@ output:
     theme: united
     toc: true
     number_sections: true
-    keep_md: true
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(fig.align = "center")
 ```
 
 Hello there! Let's start with our exercises for Chapter 4.

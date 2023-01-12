@@ -1,0 +1,187 @@
+---
+title: "Soc723 - MD Chapter 5"
+author: "Turgut Keskintürk"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: united
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(fig.align = "center")
+
+# load the relevant packages
+pacman::p_load(tidyverse, janitor, broom, patchwork, hrbrthemes, knitr)
+theme_set(theme_ipsum_rc()) # theme set for the plots
+
+```
+
+Hello there! Let's start with our exercises for Chapter 5.
+
+I am assuming that we are OK **not using** Bayesian stuff for this homework, so I am equipped with the sweet smells of `lm`.
+
+Let's load the data and clean it up a bit.
+
+```{r}
+
+d <- read.csv(
+  "https://raw.githubusercontent.com/vaiseys/223_course/main/Data/twitchdata-update.csv"
+) |> clean_names()
+
+```
+
+
+# Question 1
+
+We are first going to look at the raw data of five random streamers:
+
+```{r}
+
+set.seed(11235)
+sample_n(d, 5) |> 
+  select(followers, average_viewers) |> 
+  kable(digits = 2, align = "c")
+
+```
+
+Well, it seems that there is a relation, but no, I hate reading raw data, so let me continue by summarizing and visualizing the data.
+
+```{r, fig.width = 6, fig.height = 4, dpi = 300}
+
+d |> 
+  select(followers, average_viewers) |> 
+  summary()
+
+d |>
+  ggplot(aes(followers, average_viewers)) +
+  geom_point(alpha = 0.85, size = 1, color = "steelblue") +
+  labs(x = "Number of Followers", 
+       y = "Average Number of Viewers")
+
+```
+
+As Nico says, the data is packed into a small part of the plane. Let's redraw the plot:
+
+```{r, fig.width = 6, fig.height = 4, dpi = 300}
+
+d |>
+  ggplot(aes(followers, average_viewers)) +
+  geom_point(alpha = 0.5, size = 1, color = "steelblue") +
+  labs(x = "Number of Followers (Logged)", 
+       y = "Average Number of Viewers (Logged)") +
+  scale_x_log10() +
+  scale_y_log10()
+
+```
+
+Aha, it seems that there is a clear relationship between the number of viewers and the number of followers. That's useful:
+
+```{r}
+
+d <- d |> mutate(
+  l_viewers = log10(average_viewers),
+  l_follows = log10(followers)
+)
+
+```
+
+# Question 2
+
+A fit:
+
+```{r}
+
+fit <- lm(l_viewers ~ l_follows, data = d)
+broom::tidy(fit) |> kable(digits = 2, align = "c")
+
+```
+
+Alright, our coefficient is 0.59, so $1.1^{0.59} = 1.058$ means that 10% increase in followers results in 5.8% increase in average viewers.
+
+# Question 3
+
+OK, I am going to plot the residuals of this model:
+
+```{r, fig.width = 6, fig.height = 4, dpi = 300}
+
+d.pred <- augment(fit)
+glimpse(d.pred)
+
+d.pred |>
+  ggplot(aes(x = l_follows, .resid)) +
+  geom_point(alpha = 0.5, size = 1, color = "steelblue") +
+  labs(
+    title = "The Model Residuals",
+    x = "Average Number of Viewers (Logged)",
+    y = "Model Residuals") +
+  geom_hline(aes(yintercept = 0), linetype = "dashed", col = "orange", linewidth = 1)
+
+
+```
+
+Not bad to be honest, but there are of course some bits that are out of their league.
+
+# Question 4
+
+Some descriptions of the data at hand. Nico was talking about using `average_viewers`, but I guess the logged version is better.
+
+```{r, fig.width = 8, fig.height = 8, dpi = 300}
+
+# tabulate
+d |> 
+  count(language)
+
+# plot the relationship
+d |> 
+  ggplot(aes(x = reorder(language, desc(language)), y = l_viewers)) +
+  geom_boxplot(fill = "steelblue") +
+  labs(title = "Average Viewers Across Languages",
+       x = "Language", y = "Logged Number of Average Viewers") +
+  coord_flip()
+
+```
+
+# Question 5
+
+Another regression. Let's see what's gonna come out of it:
+
+```{r, fig.width = 8, fig.height = 8, dpi = 300}
+
+d <- d |>
+  mutate(language = as.factor(language),
+         language = relevel(language, ref = "English"))
+
+fit <- lm(l_viewers ~ language, data = d)
+
+sjPlot::plot_model(fit, sort.est = T,
+                   title = "Coefficients on the Logged Number of Viewers")
+                   
+```
+
+Nico's prediction is not bad, but there are complications with Arabic, Japanese, Russian, Spanish and Turkish (hell yeah!) streamers.
+
+# Question 6
+
+Let's explore the residuals.
+
+```{r, fig.width = 8, fig.height = 8, dpi = 300}
+
+augment(fit) |> 
+  ggplot(aes(x = reorder(language, desc(language)), .resid)) +
+  geom_point(alpha = 0.5, size = 1, color = "steelblue") +
+  labs(
+    title = "The Model Residuals",
+    x = "Language",
+    y = "Model Residuals") +
+  geom_hline(aes(yintercept = 0), linetype = "dashed", col = "orange", linewidth = 1) +
+  coord_flip()
+
+
+```
+
+Huh, too much variation in some languages. Look at the far right side of the English streamers and the Russian ones, and the left side of the Japanese. We gotta get into the world of streamers, but no, *I prefer not to.*
+
+Thank you!

@@ -7,11 +7,12 @@ output:
     theme: united
     toc: true
     number_sections: true
-    keep_md: true
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(fig.align = "center")
 ```
 
 Hello there! Let's start with our exercises for Chapter 3.
@@ -26,7 +27,8 @@ First, we will begin with loading the tidyverse package and the dataset we will 
 library(tidyverse)
 
 # loading the data
-mario_kart <- read_csv("./data/world_records.csv")
+mario_kart <- read_csv(
+  "https://raw.githubusercontent.com/vaiseys/223_course/main/Data/world_records.csv")
 
 # have a quick look at the data
 glimpse(mario_kart)
@@ -181,7 +183,8 @@ Let's load the drivers dataset.
 
 ```{r}
 
-drivers <- read_csv("./Data/drivers.csv")
+drivers <- read_csv(
+  "https://raw.githubusercontent.com/vaiseys/223_course/main/Data/drivers.csv")
 
 ```
 
