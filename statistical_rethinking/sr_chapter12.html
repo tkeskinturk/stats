@@ -11,9 +11,9 @@
 
 <meta name="author" content="Turgut Keskintürk" />
 
-<meta name="date" content="2023-01-14" />
+<meta name="date" content="2023-01-12" />
 
-<title>Soc723 - MD Chapter 7</title>
+<title>Soc723 - SR Chapter 12</title>
 
 <script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
 // be compatible with the behavior of Pandoc < 2.8).
@@ -215,6 +215,83 @@ window.buildTabsets = function(tocID) {
 };
 
 </script>
+<script>
+window.initializeCodeFolding = function(show) {
+
+  // handlers for show-all and hide all
+  $("#rmd-show-all-code").click(function() {
+    $('div.r-code-collapse').each(function() {
+      $(this).collapse('show');
+    });
+  });
+  $("#rmd-hide-all-code").click(function() {
+    $('div.r-code-collapse').each(function() {
+      $(this).collapse('hide');
+    });
+  });
+
+  // index for unique code element ids
+  var currentIndex = 1;
+
+  // select all R code blocks
+  var rCodeBlocks = $('pre.r, pre.python, pre.bash, pre.sql, pre.cpp, pre.stan, pre.julia, pre.foldable');
+  rCodeBlocks.each(function() {
+    // skip if the block has fold-none class
+    if ($(this).hasClass('fold-none')) return;
+
+    // create a collapsable div to wrap the code in
+    var div = $('<div class="collapse r-code-collapse"></div>');
+    var showThis = (show || $(this).hasClass('fold-show')) && !$(this).hasClass('fold-hide');
+    var id = 'rcode-643E0F36' + currentIndex++;
+    div.attr('id', id);
+    $(this).before(div);
+    $(this).detach().appendTo(div);
+
+    // add a show code button right above
+    var showCodeText = $('<span>' + (showThis ? 'Hide' : 'Code') + '</span>');
+    var showCodeButton = $('<button type="button" class="btn btn-default btn-xs btn-secondary btn-sm code-folding-btn pull-right float-right"></button>');
+    showCodeButton.append(showCodeText);
+    showCodeButton
+        .attr('data-toggle', 'collapse')
+        .attr('data-bs-toggle', 'collapse') // BS5
+        .attr('data-target', '#' + id)
+        .attr('data-bs-target', '#' + id)   // BS5
+        .attr('aria-expanded', showThis)
+        .attr('aria-controls', id);
+
+    var buttonRow = $('<div class="row"></div>');
+    var buttonCol = $('<div class="col-md-12"></div>');
+
+    buttonCol.append(showCodeButton);
+    buttonRow.append(buttonCol);
+
+    div.before(buttonRow);
+
+    // show the div if necessary
+    if (showThis) div.collapse('show');
+
+    // update state of button on show/hide
+    //   * Change text
+    //   * add a class for intermediate states styling
+    div.on('hide.bs.collapse', function () {
+      showCodeText.text('Code');
+      showCodeButton.addClass('btn-collapsing');
+    });
+    div.on('hidden.bs.collapse', function () {
+      showCodeButton.removeClass('btn-collapsing');
+    });
+    div.on('show.bs.collapse', function () {
+      showCodeText.text('Hide');
+      showCodeButton.addClass('btn-expanding');
+    });
+    div.on('shown.bs.collapse', function () {
+      showCodeButton.removeClass('btn-expanding');
+    });
+
+  });
+
+}
+</script>
 <style type="text/css">.hljs-literal {
 color: #990073;
 }
@@ -338,6 +415,9 @@ display: none;
 </style>
 
 <!-- code folding -->
+<style type="text/css">
+.code-folding-btn { margin-bottom: 4px; }
+</style>
 
 
 
@@ -354,306 +434,70 @@ display: none;
 
 <div id="header">
 
+<div class="btn-group pull-right float-right">
+<button type="button" class="btn btn-default btn-xs btn-secondary btn-sm dropdown-toggle" data-toggle="dropdown" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false"><span>Code</span> <span class="caret"></span></button>
+<ul class="dropdown-menu dropdown-menu-right" style="min-width: 50px;">
+<li><a id="rmd-show-all-code" href="#">Show All Code</a></li>
+<li><a id="rmd-hide-all-code" href="#">Hide All Code</a></li>
+</ul>
+</div>
 
 
-<h1 class="title toc-ignore">Soc723 - MD Chapter 7</h1>
+
+<h1 class="title toc-ignore">Soc723 - SR Chapter 12</h1>
 <h4 class="author">Turgut Keskintürk</h4>
-<h4 class="date">2023-01-14</h4>
+<h4 class="date">2023-01-12</h4>
 
 </div>
 
 <div id="TOC">
 <ul>
-<li><a href="#question-0" id="toc-question-0">Question 0</a></li>
-<li><a href="#question-1" id="toc-question-1">Question 1</a></li>
-<li><a href="#question-2" id="toc-question-2">Question 2</a></li>
-<li><a href="#question-3" id="toc-question-3">Question 3</a></li>
-<li><a href="#question-4" id="toc-question-4">Question 4</a></li>
-<li><a href="#question-5" id="toc-question-5">Question 5</a></li>
-<li><a href="#question-6" id="toc-question-6">Question 6</a></li>
-<li><a href="#question-7" id="toc-question-7">Question 7</a></li>
-<li><a href="#question-8" id="toc-question-8">Question 8</a></li>
-<li><a href="#question-9" id="toc-question-9">Question 9</a></li>
-</ul>
-</div>
-
-<p>Hello there! Let’s start with our exercises for Chapter 7.</p>
-<div id="question-0" class="section level1">
-<h1>Question 0</h1>
-<p>Answers to the questions:</p>
+<li><a href="#easy-problems" id="toc-easy-problems"><span class="toc-section-number">1</span> Easy Problems</a>
 <ul>
-<li>The number of rows is <strong>500</strong>,</li>
-<li>Each row represents <strong>a specific date of the
-year</strong>,</li>
-<li>The data cover <strong>days in 2011 and 2012</strong>,</li>
-<li>The maximum ridership is <strong>6,946</strong>,</li>
-<li>The highest wind speed was <strong>34</strong>.</li>
+<li><a href="#e1" id="toc-e1"><span class="toc-section-number">1.1</span> 11E1</a></li>
+<li><a href="#e2" id="toc-e2"><span class="toc-section-number">1.2</span> 11E2</a></li>
+<li><a href="#e3" id="toc-e3"><span class="toc-section-number">1.3</span> 11E3</a></li>
+<li><a href="#e4" id="toc-e4"><span class="toc-section-number">1.4</span> 11E4</a></li>
+</ul></li>
+<li><a href="#medium-problems" id="toc-medium-problems"><span class="toc-section-number">2</span> Medium Problems</a></li>
 </ul>
 </div>
-<div id="question-1" class="section level1">
-<h1>Question 1</h1>
-<p>Let’s start with the correlations:</p>
-<pre class="r"><code>cor(bikes$rides, bikes$temp_feel)</code></pre>
-<pre><code>## [1] 0.5824898</code></pre>
-<pre class="r"><code>cor(bikes$rides, bikes$windspeed)</code></pre>
-<pre><code>## [1] -0.1949352</code></pre>
-<p>As we can see, the number of rides is positively associated with the
-felt temperature, while negatively associated with windspeed.</p>
+
+<p>Hello there! Let’s start with our exercises for McElreath’s
+<em>Statistical Rethinking</em>, Chapter 12.</p>
+<div id="easy-problems" class="section level1" number="1">
+<h1><span class="header-section-number">1</span> Easy Problems</h1>
+<div id="e1" class="section level2" number="1.1">
+<h2><span class="header-section-number">1.1</span> 11E1</h2>
+<p>Just like <em>unordered</em> categorical variables, <em>ordered</em>
+categorical variables denote variables containing distinct categories
+w/o clear quantitative relations. The main difference lies in the fact
+that the latter can be ordered in a distinct fashion (like from low to
+high).</p>
+<p>The obvious example for the former is eye color, while an example for
+the latter is the level of schooling.</p>
 </div>
-<div id="question-2" class="section level1">
-<h1>Question 2</h1>
-<p>Thank you very much for turning the miles into kilometers, as any
-sensible person should do!</p>
-<pre class="r"><code># mutate
-bikes &lt;- bikes |&gt; 
-  mutate(wind_kphs = 1.61 * windspeed)
-
-# correlate
-cor(bikes$windspeed, bikes$wind_kphs)</code></pre>
-<pre><code>## [1] 1</code></pre>
-<p>The correlation coefficient measures the linear association between
-two variables. As we can see above, the relationship between KPH and MPH
-is just a perfectly linear relationship (both is the linear
-multiplication of the other), which is why the coefficient is 1.</p>
+<div id="e2" class="section level2" number="1.2">
+<h2><span class="header-section-number">1.2</span> 11E2</h2>
+<p>It employs a cumulative link function. It differs from the logistic
+link due to the fact that it calculates log-cumulative odds.</p>
 </div>
-<div id="question-3" class="section level1">
-<h1>Question 3</h1>
-<p>Let’s do some regressions:</p>
-<pre class="r"><code>fit1 &lt;- lm(rides ~ windspeed, data = bikes)
-fit2 &lt;- lm(rides ~ wind_kphs, data = bikes)
-
-fit1 |&gt; tidy() |&gt; kable(digits = 2, align = &quot;lcccc&quot;)</code></pre>
-<table>
-<thead>
-<tr class="header">
-<th align="left">term</th>
-<th align="center">estimate</th>
-<th align="center">std.error</th>
-<th align="center">statistic</th>
-<th align="center">p.value</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td align="left">(Intercept)</td>
-<td align="center">4205.06</td>
-<td align="center">177.04</td>
-<td align="center">23.75</td>
-<td align="center">0</td>
-</tr>
-<tr class="even">
-<td align="left">windspeed</td>
-<td align="center">-55.52</td>
-<td align="center">12.52</td>
-<td align="center">-4.44</td>
-<td align="center">0</td>
-</tr>
-</tbody>
-</table>
-<pre class="r"><code>fit2 |&gt; tidy() |&gt; kable(digits = 2, align = &quot;lcccc&quot;)</code></pre>
-<table>
-<thead>
-<tr class="header">
-<th align="left">term</th>
-<th align="center">estimate</th>
-<th align="center">std.error</th>
-<th align="center">statistic</th>
-<th align="center">p.value</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td align="left">(Intercept)</td>
-<td align="center">4205.06</td>
-<td align="center">177.04</td>
-<td align="center">23.75</td>
-<td align="center">0</td>
-</tr>
-<tr class="even">
-<td align="left">wind_kphs</td>
-<td align="center">-34.49</td>
-<td align="center">7.78</td>
-<td align="center">-4.44</td>
-<td align="center">0</td>
-</tr>
-</tbody>
-</table>
-<p>OK, the coefficients are different, as the units over which the
-linear model generates coefficients are different. If we would create
-predictions from these two models, we would end up with the same
-predictions over different values of windspeed.</p>
-<p>Notice the t-stats, which are identical. This is not surprising, we
-just basically rescaled our variables.</p>
+<div id="e3" class="section level2" number="1.3">
+<h2><span class="header-section-number">1.3</span> 11E3</h2>
+<p>The old nasty friend—omitted variable bias. The reason is that there
+are some omitted forces behind the scenes producing a different
+process.</p>
 </div>
-<div id="question-4" class="section level1">
-<h1>Question 4</h1>
-<p>If the wind is 20 KPH, the ridership would be <strong>3515</strong>.
-If the wind is 20 MPH, the ridership would be <strong>3095</strong>.</p>
+<div id="e4" class="section level2" number="1.4">
+<h2><span class="header-section-number">1.4</span> 11E4</h2>
+<p>The number of tools across societies probably show overdispersion.
+The reverse, underdispersion, would imply that the variation is less
+than the mean, meaning that some clumping around certain points. Maybe
+the number of viral diseases one experiences over the life-course.</p>
 </div>
-<div id="question-5" class="section level1">
-<h1>Question 5</h1>
-<p>Alright, some data manipulations and model fits below:</p>
-<pre class="r"><code># celcius (for sensible people)
-bikes &lt;- bikes |&gt; 
-  mutate(temp_c = (temp_feel - 32)*5/9)
-
-# model
-fit &lt;- lm(rides ~ wind_kphs + temp_c, data = bikes)
-
-# show me
-fit |&gt; tidy() |&gt; kable(digits = 2, align = &quot;lcccc&quot;)</code></pre>
-<table>
-<thead>
-<tr class="header">
-<th align="left">term</th>
-<th align="center">estimate</th>
-<th align="center">std.error</th>
-<th align="center">statistic</th>
-<th align="center">p.value</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td align="left">(Intercept)</td>
-<td align="center">942.43</td>
-<td align="center">255.83</td>
-<td align="center">3.68</td>
-<td align="center">0</td>
-</tr>
-<tr class="even">
-<td align="left">wind_kphs</td>
-<td align="center">-19.84</td>
-<td align="center">6.46</td>
-<td align="center">-3.07</td>
-<td align="center">0</td>
-</tr>
-<tr class="odd">
-<td align="left">temp_c</td>
-<td align="center">143.23</td>
-<td align="center">9.24</td>
-<td align="center">15.50</td>
-<td align="center">0</td>
-</tr>
-</tbody>
-</table>
-<ul>
-<li>For a 1 unit increase in <code>wind_kphs</code>, the model expects a
-19.8 decrease in <code>rides</code>.</li>
-<li>For a 1 unit increase in <code>temp_c</code>, the model expects a
-143 increase in <code>rides</code>.</li>
-</ul>
-<p>The intercept defines that weird universe where the wind per
-kilometer/hour is 0 and the temperature is also 0. Like hell.</p>
 </div>
-<div id="question-6" class="section level1">
-<h1>Question 6</h1>
-<p>Let’s predict what Nico wanted:</p>
-<pre class="r"><code># prediction dataframe
-pred_df &lt;- tibble(
-  situation = 1:3, temp_c = c(25, 15, 10), wind_kphs = c(15, 5, 40)
-)
-
-# predict
-pred_df &lt;- pred_df |&gt; 
-  mutate(predictions = predict(fit, newdata = pred_df))
-
-# predictions
-pred_df$predictions</code></pre>
-<pre><code>##        1        2        3 
-## 4225.647 2991.728 1581.078</code></pre>
-</div>
-<div id="question-7" class="section level1">
-<h1>Question 7</h1>
-<p>Gonna add a new predictor, <code>weekend</code>, to complicate our
-model:</p>
-<pre class="r"><code># model
-fit &lt;- lm(rides ~ wind_kphs + temp_c + weekend, data = bikes)
-
-# show me
-fit |&gt; tidy() |&gt; kable(digits = 2, align = &quot;lcccc&quot;)</code></pre>
-<table>
-<thead>
-<tr class="header">
-<th align="left">term</th>
-<th align="center">estimate</th>
-<th align="center">std.error</th>
-<th align="center">statistic</th>
-<th align="center">p.value</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td align="left">(Intercept)</td>
-<td align="center">1214.80</td>
-<td align="center">252.13</td>
-<td align="center">4.82</td>
-<td align="center">0</td>
-</tr>
-<tr class="even">
-<td align="left">wind_kphs</td>
-<td align="center">-20.39</td>
-<td align="center">6.26</td>
-<td align="center">-3.26</td>
-<td align="center">0</td>
-</tr>
-<tr class="odd">
-<td align="left">temp_c</td>
-<td align="center">140.34</td>
-<td align="center">8.96</td>
-<td align="center">15.66</td>
-<td align="center">0</td>
-</tr>
-<tr class="even">
-<td align="left">weekendTRUE</td>
-<td align="center">-713.58</td>
-<td align="center">122.48</td>
-<td align="center">-5.83</td>
-<td align="center">0</td>
-</tr>
-</tbody>
-</table>
-<ul>
-<li>If it is a weekend, the model expects a 713 decrease in
-<code>rides</code>.</li>
-</ul>
-</div>
-<div id="question-8" class="section level1">
-<h1>Question 8</h1>
-<p>Another prediction. Let’s build up the dataframe and predict:</p>
-<pre class="r"><code># prediction dataframe
-pred_df &lt;- tibble(
-  situation = 1:2, 
-  temp_c = c(rep(mean(bikes$temp_c))), 
-  wind_kphs = c(rep(mean(bikes$wind_kph))),
-  weekend = c(FALSE, TRUE)
-)
-
-# predict
-pred_df &lt;- pred_df |&gt; 
-  mutate(predictions = predict(fit, newdata = pred_df))
-
-# predictions
-pred_df$predictions</code></pre>
-<pre><code>##        1        2 
-## 3683.442 2969.867</code></pre>
-</div>
-<div id="question-9" class="section level1">
-<h1>Question 9</h1>
-<p>We are asked to find the day with the largest residual where the
-model is at its worst. Every model gets that, I hear.</p>
-<pre class="r"><code># generate residuals
-bikes &lt;- bikes |&gt; 
-  mutate(finalpreds = predict(fit, newdata = bikes)) |&gt; 
-  mutate(resids = abs(finalpreds - rides))
-
-# show me the day
-bikes |&gt; arrange(desc(resids)) |&gt; slice(1) |&gt; select(date)</code></pre>
-<pre><code>##         date
-## 1 2012-10-29</code></pre>
-<p>There were basically <strong>no</strong> (20) rides in that date. I
-looked at the date and saw that there was Hurricane Sandy. I guess
-that’s the reason.</p>
-<p>Thank you!</p>
+<div id="medium-problems" class="section level1" number="2">
+<h1><span class="header-section-number">2</span> Medium Problems</h1>
 </div>
 
 
@@ -689,6 +533,11 @@ $(document).ready(function () {
 </script>
 
 <!-- code folding -->
+<script>
+$(document).ready(function () {
+  window.initializeCodeFolding("hide" === "show");
+});
+</script>
 
 
 <!-- dynamically load mathjax for compatibility with self-contained -->

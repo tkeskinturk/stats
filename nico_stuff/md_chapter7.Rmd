@@ -142,7 +142,7 @@ fit |> tidy() |> kable(digits = 2, align = "lcccc")
 
 ```
 
-- If it is a weekend, the model expects a 713 decrease in `rides`. People not going to work, I'd assume?
+- If it is a weekend, the model expects a 713 decrease in `rides`.
 
 # Question 8
 

@@ -1,0 +1,68 @@
+---
+title: "Soc723 - SR Chapter 12"
+author: "Turgut Keskintürk"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: united
+    toc: true
+    number_sections: true
+    code_folding: "hide"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(fig.align = "center")
+
+# load the relevant packages
+pacman::p_load(
+  tidyverse,
+  purrr,
+  rethinking,
+  rstan,
+  tidybayes,
+  tidybayes.rethinking,
+  patchwork,
+  hrbrthemes,
+  dagitty
+)
+theme_set(theme_ipsum_rc()) # theme set for the plots
+
+```
+
+Hello there! Let's start with our exercises for McElreath's *Statistical Rethinking*, Chapter 12.
+
+# Easy Problems
+
+## 12E1
+
+Just like *unordered* categorical variables, *ordered* categorical variables denote variables containing distinct categories w/o clear quantitative relations. The main difference lies in the fact that the latter can be ordered in a distinct fashion (like from low to high).
+
+The obvious example for the former is eye color, while an example for the latter is the level of schooling.
+
+## 12E2
+
+It employs a cumulative link function. It differs from the logistic link due to the fact that it calculates log-cumulative odds.
+
+## 12E3
+
+The old nasty friend—omitted variable bias. The reason is that there are some omitted forces behind the scenes producing a different process.
+
+## 12E4
+
+The number of tools across societies probably show overdispersion. The reverse, underdispersion, would imply that the variation is less than the mean, meaning that some clumping around certain points. Maybe the number of viral diseases one experiences over the life-course.
+
+# Medium Problems
+
+## 12M1
+
+
+
+## 12M2
+
+## 12M3
+
+
+
+
