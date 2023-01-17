@@ -33,21 +33,20 @@ d <- read.csv(
 
 ```
 
-
 # Question 1
 
 We are first going to look at the raw data of five random streamers:
 
 ```{r}
 
-set.seed(11235)
+set.seed(112358)
 sample_n(d, 5) |> 
   select(followers, average_viewers) |> 
   kable(digits = 2, align = "c")
 
 ```
 
-Well, it seems that there is a relation, but no, I hate reading raw data, so let me continue by summarizing and visualizing the data.
+Well, it seems that there is a relation, but no, I hate reading raw data, so let me continue by summarizing and visualizing it.
 
 ```{r, fig.width = 6, fig.height = 4, dpi = 300}
 
@@ -57,21 +56,26 @@ d |>
 
 d |>
   ggplot(aes(followers, average_viewers)) +
-  geom_point(alpha = 0.85, size = 1, color = "steelblue") +
-  labs(x = "Number of Followers", 
-       y = "Average Number of Viewers")
+  geom_point(alpha = 0.5, size = 1, color = "#720500") +
+  labs(
+    title = "The Association of Followers and Viewers",
+    x = "Number of Followers",
+    y = "Average Number of Viewers")
 
 ```
 
-As Nico says, the data is packed into a small part of the plane. Let's redraw the plot:
+As Nico says, the data is packed into a small part of the plane. Let's redraw it:
 
 ```{r, fig.width = 6, fig.height = 4, dpi = 300}
 
 d |>
   ggplot(aes(followers, average_viewers)) +
-  geom_point(alpha = 0.5, size = 1, color = "steelblue") +
-  labs(x = "Number of Followers (Logged)", 
-       y = "Average Number of Viewers (Logged)") +
+  geom_point(alpha = 0.5, size = 1, color = "#720500") +
+  labs(
+    title = "The Association of Followers and Viewers",
+    subtitle = "Renewed with the Trick of Logarithms",
+    x = "Number of Followers (Logged)",
+    y = "Average Number of Viewers (Logged)") +
   scale_x_log10() +
   scale_y_log10()
 
@@ -95,7 +99,10 @@ A fit:
 ```{r}
 
 fit <- lm(l_viewers ~ l_follows, data = d)
-broom::tidy(fit) |> kable(digits = 2, align = "c")
+broom::tidy(fit) |> 
+  select(-p.value) |> 
+  mutate(term = ifelse(term == "l_follows", "Followers", term)) |> 
+  kable(digits = 2, align = "c") # don't show the p-values!
 
 ```
 
@@ -112,17 +119,17 @@ glimpse(d.pred)
 
 d.pred |>
   ggplot(aes(x = l_follows, .resid)) +
-  geom_point(alpha = 0.5, size = 1, color = "steelblue") +
+  geom_point(alpha = 0.5, size = 1, color = "#720500") +
   labs(
     title = "The Model Residuals",
     x = "Average Number of Viewers (Logged)",
     y = "Model Residuals") +
-  geom_hline(aes(yintercept = 0), linetype = "dashed", col = "orange", linewidth = 1)
+  geom_hline(aes(yintercept = 0), linetype = "dashed", col = "black", linewidth = 1)
 
 
 ```
 
-Not bad to be honest, but there are of course some bits that are out of their league.
+Not bad to be honest, but there many bits out of their league. Particularly where the logged values are between 5 and 6.
 
 # Question 4
 
@@ -137,7 +144,7 @@ d |>
 # plot the relationship
 d |> 
   ggplot(aes(x = reorder(language, desc(language)), y = l_viewers)) +
-  geom_boxplot(fill = "steelblue") +
+  geom_boxplot(fill = "#720500") +
   labs(title = "Average Viewers Across Languages",
        x = "Language", y = "Logged Number of Average Viewers") +
   coord_flip()
@@ -156,12 +163,15 @@ d <- d |>
 
 fit <- lm(l_viewers ~ language, data = d)
 
-sjPlot::plot_model(fit, sort.est = T,
-                   title = "Coefficients on the Logged Number of Viewers")
-                   
+ggeffects::ggpredict(fit, terms = "language") |> 
+  plot() + coord_flip() +
+  labs(title = "Predictions on the Logged Number of Viewers",
+       x = "", y = "Predicted Logged Number of Average Viewers") +
+  theme_ipsum(grid = "none")
+
 ```
 
-Nico's prediction is not bad, but there are complications with Arabic, Japanese, Russian, Spanish and Turkish (hell yeah!) streamers.
+Nico's prediction is not bad, but there are wild fluctuations! Mainly because of the size in those categories. 
 
 # Question 6
 
@@ -171,14 +181,13 @@ Let's explore the residuals.
 
 augment(fit) |> 
   ggplot(aes(x = reorder(language, desc(language)), .resid)) +
-  geom_point(alpha = 0.5, size = 1, color = "steelblue") +
+  geom_point(alpha = 0.5, size = 1, color = "#720500") +
   labs(
     title = "The Model Residuals",
     x = "Language",
     y = "Model Residuals") +
-  geom_hline(aes(yintercept = 0), linetype = "dashed", col = "orange", linewidth = 1) +
+  geom_hline(aes(yintercept = 0), linetype = "dashed", col = "black", linewidth = 1) +
   coord_flip()
-
 
 ```
 

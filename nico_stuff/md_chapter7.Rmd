@@ -39,8 +39,8 @@ Let's start with the correlations:
 
 ```{r}
 
-cor(bikes$rides, bikes$temp_feel)
-cor(bikes$rides, bikes$windspeed)
+cor(bikes$rides, bikes$temp_feel) |> round(2)
+cor(bikes$rides, bikes$windspeed) |> round(2)
 
 ```
 
@@ -72,8 +72,14 @@ Let's do some regressions:
 fit1 <- lm(rides ~ windspeed, data = bikes)
 fit2 <- lm(rides ~ wind_kphs, data = bikes)
 
-fit1 |> tidy() |> kable(digits = 2, align = "lcccc")
-fit2 |> tidy() |> kable(digits = 2, align = "lcccc")
+fit1 |> tidy() |> 
+  subset(select = -p.value) |> 
+  mutate(term = ifelse(term == "windspeed", "Wind per Mile/Hour", term)) |> 
+  kable(digits = 2, align = "lcccc")
+fit2 |> tidy() |> 
+  subset(select = -p.value) |> 
+  mutate(term = ifelse(term == "wind_kphs", "Wind per Km/Hour", term)) |> 
+  kable(digits = 2, align = "lcccc")
 
 ```
 
@@ -99,7 +105,11 @@ bikes <- bikes |>
 fit <- lm(rides ~ wind_kphs + temp_c, data = bikes)
 
 # show me
-fit |> tidy() |> kable(digits = 2, align = "lcccc")
+fit |> tidy() |> 
+  subset(select = -p.value) |> 
+  mutate(term = ifelse(term == "wind_kphs", "Wind per Km/Hour", term),
+         term = ifelse(term == "temp_c", "Temperature in Celcius", term)) |> 
+  kable(digits = 2, align = "lcccc")
 
 ```
 
@@ -138,7 +148,12 @@ Gonna add a new predictor, `weekend`, to complicate our model:
 fit <- lm(rides ~ wind_kphs + temp_c + weekend, data = bikes)
 
 # show me
-fit |> tidy() |> kable(digits = 2, align = "lcccc")
+fit |> tidy() |> 
+  subset(select = -p.value) |> 
+  mutate(term = ifelse(term == "wind_kphs", "Wind per Km/Hour", term),
+         term = ifelse(term == "temp_c", "Temperature in Celcius", term),
+         term = ifelse(term == "weekendTRUE", "Weekend", term)) |> 
+  kable(digits = 2, align = "lcccc")
 
 ```
 

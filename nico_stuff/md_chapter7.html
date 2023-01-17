@@ -11,7 +11,7 @@
 
 <meta name="author" content="Turgut Keskintürk" />
 
-<meta name="date" content="2023-01-14" />
+<meta name="date" content="2023-01-16" />
 
 <title>Soc723 - MD Chapter 7</title>
 
@@ -358,7 +358,7 @@ display: none;
 
 <h1 class="title toc-ignore">Soc723 - MD Chapter 7</h1>
 <h4 class="author">Turgut Keskintürk</h4>
-<h4 class="date">2023-01-14</h4>
+<h4 class="date">2023-01-16</h4>
 
 </div>
 
@@ -393,10 +393,10 @@ year</strong>,</li>
 <div id="question-1" class="section level1">
 <h1>Question 1</h1>
 <p>Let’s start with the correlations:</p>
-<pre class="r"><code>cor(bikes$rides, bikes$temp_feel)</code></pre>
-<pre><code>## [1] 0.5824898</code></pre>
-<pre class="r"><code>cor(bikes$rides, bikes$windspeed)</code></pre>
-<pre><code>## [1] -0.1949352</code></pre>
+<pre class="r"><code>cor(bikes$rides, bikes$temp_feel) |&gt; round(2)</code></pre>
+<pre><code>## [1] 0.58</code></pre>
+<pre class="r"><code>cor(bikes$rides, bikes$windspeed) |&gt; round(2)</code></pre>
+<pre><code>## [1] -0.19</code></pre>
 <p>As we can see, the number of rides is positively associated with the
 felt temperature, while negatively associated with windspeed.</p>
 </div>
@@ -422,7 +422,10 @@ multiplication of the other), which is why the coefficient is 1.</p>
 <pre class="r"><code>fit1 &lt;- lm(rides ~ windspeed, data = bikes)
 fit2 &lt;- lm(rides ~ wind_kphs, data = bikes)
 
-fit1 |&gt; tidy() |&gt; kable(digits = 2, align = &quot;lcccc&quot;)</code></pre>
+fit1 |&gt; tidy() |&gt; 
+  subset(select = -p.value) |&gt; 
+  mutate(term = ifelse(term == &quot;windspeed&quot;, &quot;Wind per Mile/Hour&quot;, term)) |&gt; 
+  kable(digits = 2, align = &quot;lcccc&quot;)</code></pre>
 <table>
 <thead>
 <tr class="header">
@@ -430,7 +433,6 @@ fit1 |&gt; tidy() |&gt; kable(digits = 2, align = &quot;lcccc&quot;)</code></pre
 <th align="center">estimate</th>
 <th align="center">std.error</th>
 <th align="center">statistic</th>
-<th align="center">p.value</th>
 </tr>
 </thead>
 <tbody>
@@ -439,18 +441,19 @@ fit1 |&gt; tidy() |&gt; kable(digits = 2, align = &quot;lcccc&quot;)</code></pre
 <td align="center">4205.06</td>
 <td align="center">177.04</td>
 <td align="center">23.75</td>
-<td align="center">0</td>
 </tr>
 <tr class="even">
-<td align="left">windspeed</td>
+<td align="left">Wind per Mile/Hour</td>
 <td align="center">-55.52</td>
 <td align="center">12.52</td>
 <td align="center">-4.44</td>
-<td align="center">0</td>
 </tr>
 </tbody>
 </table>
-<pre class="r"><code>fit2 |&gt; tidy() |&gt; kable(digits = 2, align = &quot;lcccc&quot;)</code></pre>
+<pre class="r"><code>fit2 |&gt; tidy() |&gt; 
+  subset(select = -p.value) |&gt; 
+  mutate(term = ifelse(term == &quot;wind_kphs&quot;, &quot;Wind per Km/Hour&quot;, term)) |&gt; 
+  kable(digits = 2, align = &quot;lcccc&quot;)</code></pre>
 <table>
 <thead>
 <tr class="header">
@@ -458,7 +461,6 @@ fit1 |&gt; tidy() |&gt; kable(digits = 2, align = &quot;lcccc&quot;)</code></pre
 <th align="center">estimate</th>
 <th align="center">std.error</th>
 <th align="center">statistic</th>
-<th align="center">p.value</th>
 </tr>
 </thead>
 <tbody>
@@ -467,14 +469,12 @@ fit1 |&gt; tidy() |&gt; kable(digits = 2, align = &quot;lcccc&quot;)</code></pre
 <td align="center">4205.06</td>
 <td align="center">177.04</td>
 <td align="center">23.75</td>
-<td align="center">0</td>
 </tr>
 <tr class="even">
-<td align="left">wind_kphs</td>
+<td align="left">Wind per Km/Hour</td>
 <td align="center">-34.49</td>
 <td align="center">7.78</td>
 <td align="center">-4.44</td>
-<td align="center">0</td>
 </tr>
 </tbody>
 </table>
@@ -501,7 +501,11 @@ bikes &lt;- bikes |&gt;
 fit &lt;- lm(rides ~ wind_kphs + temp_c, data = bikes)
 
 # show me
-fit |&gt; tidy() |&gt; kable(digits = 2, align = &quot;lcccc&quot;)</code></pre>
+fit |&gt; tidy() |&gt; 
+  subset(select = -p.value) |&gt; 
+  mutate(term = ifelse(term == &quot;wind_kphs&quot;, &quot;Wind per Km/Hour&quot;, term),
+         term = ifelse(term == &quot;temp_c&quot;, &quot;Temperature in Celcius&quot;, term)) |&gt; 
+  kable(digits = 2, align = &quot;lcccc&quot;)</code></pre>
 <table>
 <thead>
 <tr class="header">
@@ -509,7 +513,6 @@ fit |&gt; tidy() |&gt; kable(digits = 2, align = &quot;lcccc&quot;)</code></pre>
 <th align="center">estimate</th>
 <th align="center">std.error</th>
 <th align="center">statistic</th>
-<th align="center">p.value</th>
 </tr>
 </thead>
 <tbody>
@@ -518,21 +521,18 @@ fit |&gt; tidy() |&gt; kable(digits = 2, align = &quot;lcccc&quot;)</code></pre>
 <td align="center">942.43</td>
 <td align="center">255.83</td>
 <td align="center">3.68</td>
-<td align="center">0</td>
 </tr>
 <tr class="even">
-<td align="left">wind_kphs</td>
+<td align="left">Wind per Km/Hour</td>
 <td align="center">-19.84</td>
 <td align="center">6.46</td>
 <td align="center">-3.07</td>
-<td align="center">0</td>
 </tr>
 <tr class="odd">
-<td align="left">temp_c</td>
+<td align="left">Temperature in Celcius</td>
 <td align="center">143.23</td>
 <td align="center">9.24</td>
 <td align="center">15.50</td>
-<td align="center">0</td>
 </tr>
 </tbody>
 </table>
@@ -570,7 +570,12 @@ model:</p>
 fit &lt;- lm(rides ~ wind_kphs + temp_c + weekend, data = bikes)
 
 # show me
-fit |&gt; tidy() |&gt; kable(digits = 2, align = &quot;lcccc&quot;)</code></pre>
+fit |&gt; tidy() |&gt; 
+  subset(select = -p.value) |&gt; 
+  mutate(term = ifelse(term == &quot;wind_kphs&quot;, &quot;Wind per Km/Hour&quot;, term),
+         term = ifelse(term == &quot;temp_c&quot;, &quot;Temperature in Celcius&quot;, term),
+         term = ifelse(term == &quot;weekendTRUE&quot;, &quot;Weekend&quot;, term)) |&gt; 
+  kable(digits = 2, align = &quot;lcccc&quot;)</code></pre>
 <table>
 <thead>
 <tr class="header">
@@ -578,7 +583,6 @@ fit |&gt; tidy() |&gt; kable(digits = 2, align = &quot;lcccc&quot;)</code></pre>
 <th align="center">estimate</th>
 <th align="center">std.error</th>
 <th align="center">statistic</th>
-<th align="center">p.value</th>
 </tr>
 </thead>
 <tbody>
@@ -587,28 +591,24 @@ fit |&gt; tidy() |&gt; kable(digits = 2, align = &quot;lcccc&quot;)</code></pre>
 <td align="center">1214.80</td>
 <td align="center">252.13</td>
 <td align="center">4.82</td>
-<td align="center">0</td>
 </tr>
 <tr class="even">
-<td align="left">wind_kphs</td>
+<td align="left">Wind per Km/Hour</td>
 <td align="center">-20.39</td>
 <td align="center">6.26</td>
 <td align="center">-3.26</td>
-<td align="center">0</td>
 </tr>
 <tr class="odd">
-<td align="left">temp_c</td>
+<td align="left">Temperature in Celcius</td>
 <td align="center">140.34</td>
 <td align="center">8.96</td>
 <td align="center">15.66</td>
-<td align="center">0</td>
 </tr>
 <tr class="even">
-<td align="left">weekendTRUE</td>
+<td align="left">Weekend</td>
 <td align="center">-713.58</td>
 <td align="center">122.48</td>
 <td align="center">-5.83</td>
-<td align="center">0</td>
 </tr>
 </tbody>
 </table>

@@ -36,17 +36,22 @@ Let's fit our model:
 ```{r}
 
 # some data tweaks
-d <- d %>%
+d <- d |> 
   mutate(
     major_category = as.factor(major_category),
     major_category = relevel(major_category, ref = "Management, Business, and Financial")
-  )
+  ) |> 
+  mutate(year = year - 2013) # gonna center the year at 0 to avoid bad intercept
 
 # fit the data, and name it something other than nico's ridiculously long name
 fit <- lm(wage_percent_of_male ~ year + major_category, data = d)
 
 # show me
-fit |> tidy() |> kable(digits = 2, align = "lcccc")
+fit |> tidy() |> 
+  select(-p.value) |> 
+  mutate(term = str_remove(term, pattern = "major_category"),
+         term = ifelse(term == "year", "Year", term)) |> # prettify
+  kable(digits = 2, align = "lcccc")
 
 ```
 
@@ -62,8 +67,8 @@ Let's see if the parallel trends assumption is warranted:
 
 d |>
   ggplot(aes(x = year, y = wage_percent_of_male)) +
-  geom_jitter(alpha = 0.1, col = "steelblue") +
-  geom_smooth(method = "lm", col = "orange") +
+  geom_jitter(alpha = 0.1, col = "#720500") +
+  geom_smooth(method = "lm", col = "black") +
   labs(title = "Women's Earnings with Respect to Men's",
        y = "% of Men's Income",
        x = "Year") +
@@ -83,13 +88,17 @@ Let's do the interaction and inspect the results.
 int <- lm(wage_percent_of_male ~ year * major_category, data = d)
 
 # show me
-int |> tidy() |> kable(digits = 2, align = "lcccc")
+int |> tidy() |> 
+  select(-p.value) |> 
+  mutate(
+    term = str_replace(term, pattern = "year:major_category", "Interaction: Year x "),
+    term = str_remove(term, pattern = "major_category"),
+    term = ifelse(term == "year", "Year", term)) |> # prettify
+  kable(digits = 2, align = "lcccc")
 
 ```
 
 Some algebraic operations gave us the following responses: (a) **96.06** for Computing and (b) **81.74** for Service. Wow!
-
-By the way, it would be good to center the `year` variable at 0, as these coefficients are insane.
 
 # Question 4
 
@@ -105,7 +114,10 @@ We are still interested in how `wage_percent_of_male` changed across these years
 fit1 <- lm(wage_percent_of_male ~ year, data = d)
 
 # show me
-fit1 |> tidy() |> kable(digits = 2, align = "lcccc")
+fit1 |> tidy() |> 
+  select(-p.value) |> # this is not necessary I know, but it's fun
+  mutate(term = ifelse(term == "year", "Year", term)) |> # same
+  kable(digits = 2, align = "lcccc")
 
 ```
 
@@ -113,9 +125,10 @@ As we talked above, there is a slight uptick, but it's not much clear what's goi
 
 ```{r}
 
-d %>% 
+d |> 
   select(year, wage_percent_of_male, percent_female) %>% 
-  cor(use = "complete.obs")
+  cor(use = "complete.obs") |> 
+  kable(digits = 2, align = "ccc")
 
 ```
 
@@ -127,7 +140,11 @@ OK, the correlations are pretty low, though `percent_female` might pick up some 
 fit2 <- lm(wage_percent_of_male ~ year + percent_female, data = d)
 
 # show me
-fit2 |> tidy() |> kable(digits = 2, align = "lcccc")
+fit2 |> tidy() |> 
+  select(-p.value) |> # this is not necessary I know, but it's fun
+  mutate(term = ifelse(term == "year", "Year", term),
+         term = ifelse(term == "percent_female", "% Female", term)) |> # same
+  kable(digits = 2, align = "lcccc")
 
 ```
 
