@@ -1,0 +1,518 @@
+---
+title: "Soc723 - SR Chapter 13"
+author: "Turgut Keskintürk"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: united
+    toc: true
+    number_sections: true
+    code_folding: "hide"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(fig.align = "center")
+
+# load the relevant packages
+pacman::p_load(
+  tidyverse,
+  purrr,
+  rethinking,
+  rstan,
+  tidybayes,
+  tidybayes.rethinking,
+  patchwork,
+  hrbrthemes,
+  knitr
+)
+theme_set(theme_ipsum_rc()) # theme set for the plots
+
+```
+
+Hello there! Let's start with our exercises for McElreath's *Statistical Rethinking*, Chapter 13.
+
+# Easy Problems
+
+## 13E1
+
+The shrinkage means that the model will not get too excited by the data; so, the answer is **(a)**, as the variation it allows is more limited.
+
+## 13E2
+
+I assume a model with varying intercepts but no varying slopes (just want to say *fixed slopes* here, but I get it, McElreath):
+
+$$
+\begin{aligned}
+y_i &\sim \text{Binomial}(1, p_i)
+\\
+\text{logit}(p_i) &= \alpha_{GROUP[i]} + \beta x_i
+\\
+\alpha_{GROUP} &\sim \text{Normal}(\theta, \sigma) \ & \text{Adaptive prior}
+\\
+\theta &\sim \text{Normal}(0, 1.5)  \ & \text{Prior for the group guys}
+\\
+\sigma &\sim \text{Exponential}(1)  \ & \text{Standard deviation for the group guys}
+\\
+\beta &\sim \text{Normal}(0, 0.5) \ & \text{The boring fixed effects prior}
+\end{aligned}
+$$
+
+## 13E3
+
+I still assume a model with varying intercepts but no varying slopes (and still want to say *fixed slopes* here, too):
+
+$$
+\begin{aligned}
+y_i &\sim \text{Normal}(\mu_i, \sigma)
+\\
+\mu_i &= \alpha_{GROUP[i]} + \beta x_i
+\\
+\alpha_{GROUP} &\sim \text{Normal}(\theta, \tau) \ & \text{Adaptive prior}
+\\
+\theta &\sim \text{Normal}(0, 5)  \ & \text{Prior for the group guys}
+\\
+\tau &\sim \text{Exponential} (1) \ & \text{Standard deviation for the group guys}
+\\
+\sigma &\sim \text{Exponential}(1)  \ & \text{This is for the likelihood this time!}
+\\
+\beta &\sim \text{Normal}(0, 1)
+\end{aligned}
+$$
+
+## 13E4
+
+Alright, time for Poisson:
+
+$$
+\begin{aligned}
+y_i &\sim \text{Poisson}(\lambda_i)
+\\
+\text{log}(\lambda_i) &= \alpha_{GROUP[i]}
+\\
+\alpha_{GROUP} &\sim \text{Normal}(\theta, \sigma) \ & \text{Adaptive prior}
+\\
+\theta &\sim \text{Normal}(0, 1)  \ & \text{Prior for the group guys}
+\\
+\sigma &\sim \text{Exponential}(1)  \ & \text{Standard deviation for the group guys}
+\end{aligned}
+$$
+
+## 13E5
+
+Nice, this time we will have two terms!
+
+$$
+\begin{aligned}
+y_i &\sim \text{Poisson}(\lambda_i)
+\\
+\text{log}(\lambda_i) &= \alpha_{GROUP1[i]} + \beta_{GROUP2[i]}
+\\
+\alpha_{GROUP1} &\sim \text{Normal}(\theta_1, \sigma_1) \ & \text{Adaptive prior for Group 1}
+\\
+\beta_{GROUP2} &\sim \text{Normal}(\theta_2, \sigma_2) \ & \text{Adaptive prior for Group 2}
+\\
+\theta_1 &\sim \text{Normal}(0, 1)  \ & \text{Prior for Group 1}
+\\
+\theta_2 &\sim \text{Normal}(0, 1)  \ & \text{Prior for Group 2}
+\\
+\sigma_1 &\sim \text{Exponential}(1)  \ & \text{Standard deviation for Group 1}
+\\
+\sigma_2 &\sim \text{Exponential}(1)  \ & \text{Standard deviation for Group 2}
+\end{aligned}
+$$
+
+# Medium Problems
+
+OK, we are going to use the `reedfrogs` data for the upcoming four questions. Let's load it and prepare it for analyses.
+
+```{r}
+
+# load
+data(reedfrogs)
+
+# add an index & generate integers
+d <- reedfrogs |> 
+  mutate(tank = 1:nrow(reedfrogs),
+         size = ifelse(size == "small", 1, 2),
+         pred = ifelse(pred == "no", 1, 2),
+         term = case_when( # an interaction variable for ease later
+           size == 1 & pred == 1 ~ 1,
+           size == 1 & pred == 2 ~ 2,
+           size == 2 & pred == 1 ~ 3,
+           size == 2 & pred == 2 ~ 4))
+  
+# generate lists of data
+d1 <- list(tank = d$tank, S = d$surv, N = d$density) # this is for using the data without the treatment variables
+d2 <- list(tank = d$tank, S = d$surv, N = d$density, size = d$size, pred = d$pred) # all variables
+d3 <- list(tank = d$tank, S = d$surv, N = d$density, size = d$size) # with size
+d4 <- list(tank = d$tank, S = d$surv, N = d$density, pred = d$pred) # with pred
+d5 <- list(tank = d$tank, S = d$surv, N = d$density, size = d$size, pred = d$pred, term = d$term) # interaction data 
+
+```
+
+Let's also fit the model used in the textbook:
+
+```{r, message = FALSE, warning = FALSE, results = "hide"}
+
+# just the linear model
+m1 <- ulam(
+  alist(
+    S ~ dbinom(N, p),
+    logit(p) <- a[tank],
+    a[tank] ~ dnorm(0, 1.5)
+  ), data = d1, chains = 4, cores = 4, log_lik = T)
+
+# multilevel model
+m2 <- ulam(
+  alist(
+    S ~ dbinom(N, p),
+    logit(p) <- a[tank],
+    a[tank] ~ dnorm(a_bar, sigma),
+    a_bar ~ dnorm(0, 1.5),
+    sigma ~ dexp(1)
+  ), data = d1, chains = 4, cores = 4, log_lik = T
+)
+
+```
+
+## 13M1
+
+OK, we are going to fit several models for comparison: (a) either treatment alone, (b) both treatments, and (c) their interactions. Let's do it:
+
+```{r, message = FALSE, warning = FALSE, results = "hide"}
+
+# model with size
+m3 <- ulam(
+  alist(
+    S ~ dbinom(N, p),
+    logit(p) <- a[tank] + b[size],
+    a[tank] ~ dnorm(a_bar, sigma),
+    a_bar ~ dnorm(0, 1.5),
+    sigma ~ dexp(1),
+    b[size] ~ dnorm(0, 1)
+  ), data = d3, chains = 4, cores = 4, log_lik = T
+)
+
+# model with pred
+m4 <- ulam(
+  alist(
+    S ~ dbinom(N, p),
+    logit(p) <- a[tank] + b[pred],
+    a[tank] ~ dnorm(a_bar, sigma),
+    a_bar ~ dnorm(0, 1.5),
+    sigma ~ dexp(1),
+    b[pred] ~ dnorm(0, 1)
+  ), data = d4, chains = 4, cores = 4, log_lik = T
+)
+
+# model with both treatments
+m5 <- ulam(
+  alist(
+    S ~ dbinom(N, p),
+    logit(p) <- a[tank] + b1[size] + b2[pred],
+    a[tank] ~ dnorm(a_bar, sigma),
+    a_bar ~ dnorm(0, 1.5),
+    sigma ~ dexp(1),
+    b1[size] ~ dnorm(0, 1),
+    b2[pred] ~ dnorm(0, 1)
+  ), data = d2, chains = 4, cores = 4, log_lik = T
+)
+
+# model with both treatments and their interactions
+m6 <- ulam(
+  alist(
+    S ~ dbinom(N, p),
+    logit(p) <- a[tank] + b1[size] + b2[pred] + b3[term],
+    a[tank] ~ dnorm(a_bar, sigma),
+    a_bar ~ dnorm(0, 1.5),
+    sigma ~ dexp(1),
+    b1[size] ~ dnorm(0, 1),
+    b2[pred] ~ dnorm(0, 1),
+    b3[term] ~ dnorm(0, 1)
+  ), data = d5, chains = 4, cores = 4, log_lik = T
+)
+
+```
+
+OK, we fitted the models. McElreath wants us to think about the *inferred variation across tanks*, which is basically the $\sigma$ parameter. Let me pull the posterior distributions of these parameters from each model and visualize the changes across models:
+
+```{r, fig.width = 8, fig.height = 6, dpi = 300}
+
+bind_rows(
+  precis(m2, depth = 2, pars = "sigma") |> t() |> as_tibble() |> janitor::clean_names(),
+  precis(m3, depth = 2, pars = "sigma") |> t() |> as_tibble() |> janitor::clean_names(),
+  precis(m4, depth = 2, pars = "sigma") |> t() |> as_tibble() |> janitor::clean_names(),
+  precis(m5, depth = 2, pars = "sigma") |> t() |> as_tibble() |> janitor::clean_names(),
+  precis(m6, depth = 2, pars = "sigma") |> t() |> as_tibble() |> janitor::clean_names()
+) |> mutate(
+  models = c("Baseline Model", "Model with Size", "Model with Pred", "Model with Both", "Interaction Model")
+) |> 
+  ggplot(aes(x = reorder(models, mean), y = mean)) +
+  geom_point() +
+  geom_linerange(aes(ymin = x5_5_percent, ymax = x94_5_percent)) +
+  labs(title = "Posterior Distribution of Sigma Across Models", 
+       x = "Models", y = "Sigma") +
+  coord_flip()
+
+```
+
+It seems that not `size`, but `pred` treatment explains an important portion of the variation across tanks.
+
+## 13M2
+
+Let's compare these models to have a sense of model fit:
+
+```{r}
+
+rethinking::compare(m2, m3, m4, m5, m6) |> 
+  # prettify the results
+  as_tibble() |> 
+  mutate(models = c("Model with Pred", "Model with Interactions", "Model with Size", "Model with Both", "Baseline Model")) |> 
+  relocate(models) |> 
+  kable(digits = 2, align = "c")
+
+```
+
+As we can see, the models including `pred` tends to perform better, though the differences do not really amount to anything. We saw before that the `pred` is particularly good in terms of reducing $\sigma$, but well, the model that ascribes variation to tanks performs as better.
+
+To be honest, out-of-sample prediction is not everything!
+
+## 13M3
+
+Now, we are going to fit the same varying intercept model with a Cauchy distribution. Here is the model:
+
+```{r, message = FALSE, warning = FALSE, results = "hide"}
+
+# multilevel model with cauchy distribution
+m7 <- ulam(
+  alist(
+    S ~ dbinom(N, p),
+    logit(p) <- a[tank],
+    a[tank] ~ dcauchy(a_bar, sigma),
+    a_bar ~ dnorm(0, 1.5),
+    sigma ~ dexp(1)
+  ), data = d1, chains = 4, cores = 4, log_lik = T
+)
+
+```
+
+Well, no divergent transitions. Looking at the trankplots, though, I saw that there are some wild behaviors of certain parameter values. Let's look at the `n_eff` values for all parameters to spot the problems:
+
+```{r, fig.width = 7.5, fig.height = 7.5, dpi = 300}
+
+tibble(
+  param = rownames(precis(m7, depth = 2)),
+  n_eff = precis(m7, depth = 2) |> as_tibble() |> pull(n_eff)) |> 
+  filter(param != "a_bar" & param != "sigma") |> 
+  ggplot(aes(x = reorder(param, n_eff), n_eff)) +
+  geom_point() +
+  coord_flip() +
+  labs(title = "Effective Sample Size Across Parameters", x = "Parameters", y = "Effective Sample Size")
+
+```
+
+Yeah, some of the `n_eff` values are horrible. Let's follow McElreath and fit the model once more, this time changing acceptance rate:
+
+```{r, message = FALSE, warning = FALSE, results = "hide"}
+
+# multilevel model with cauchy distribution, revised
+m8 <- ulam(m7, data = d1, chains = 4, cores = 4, log_lik = T, control = list(adapt_delta = 0.99))
+
+```
+
+This time a lot of warnings (algorithmic issues), though no divergent transitions again. Let's see the `n_eff` values:
+
+```{r, fig.width = 7.5, fig.height = 7.5, dpi = 300}
+
+tibble(
+  param = rownames(precis(m8, depth = 2)),
+  n_eff = precis(m8, depth = 2) |> as_tibble() |> pull(n_eff)) |> 
+  filter(param != "a_bar" & param != "sigma") |> 
+  ggplot(aes(x = reorder(param, n_eff), n_eff)) +
+  geom_point() +
+  coord_flip() +
+  labs(title = "Effective Sample Size Across Parameters", x = "Parameters", y = "Effective Sample Size")
+
+```
+
+I guess I am going to need to reparametrize. Let's do it:
+
+```{r, message = FALSE, warning = FALSE, results = "hide"}
+
+# multilevel model with cauchy distribution, second revision
+m9 <- ulam(
+  alist(
+    S ~ dbinom(N, p),
+    logit(p) <- a_bar + z[tank]*sigma,
+    z[tank] ~ dcauchy(0, 1),
+    a_bar ~ dnorm(0, 1.5),
+    sigma ~ dexp(1),
+    gq> vector[tank]:a <<- a_bar + z*sigma
+  ), data = d1, chains = 4, cores = 4, log_lik = T
+)
+
+```
+
+OK, I got no warnings, neither divergent transitions nor algorithmic problems. Let's inspect the `n_eff` values once more:
+
+```{r, fig.width = 7.5, fig.height = 7.5, dpi = 300}
+
+tibble(
+  param = rownames(precis(m9, depth = 2)),
+  n_eff = precis(m9, depth = 2) |> as_tibble() |> pull(n_eff)
+) |>
+  filter(str_detect(param, "a")) |>
+  filter(param != "a_bar" & param != "sigma") |>
+  left_join(
+    tibble(
+      param = rownames(precis(m8, depth = 2)),
+      n_eff = precis(m8, depth = 2) |> as_tibble() |> pull(n_eff)
+    ) |>
+      filter(param != "a_bar" & param != "sigma"),
+    by = "param"
+  ) |> 
+  ggplot(aes(x = n_eff.x, y = n_eff.y)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1) + 
+  labs(title = "Effective Sample Size Across Parameters", x = "Parametrized Model", y = "Non-Parametrized Model")
+
+```
+
+It seems that this is much better, though there is a clump of parameters close to 0. Let's compare the posterior means of these models:
+
+```{r, fig.width = 7.5, fig.height = 7.5, dpi = 300}
+
+tibble(
+  param = rownames(precis(m9, depth = 2)),
+  n_eff = precis(m9, depth = 2) |> as_tibble() |> pull(mean)
+) |>
+  filter(str_detect(param, "a")) |>
+  filter(param != "a_bar" & param != "sigma") |>
+  left_join(
+    tibble(
+      param = rownames(precis(m2, depth = 2)),
+      n_eff = precis(m2, depth = 2) |> as_tibble() |> pull(mean)
+    ) |>
+      filter(param != "a_bar" & param != "sigma"),
+    by = "param"
+  ) |> 
+  ggplot(aes(x = n_eff.x, y = n_eff.y)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1) + 
+  labs(title = "Posterior Means", x = "Cauchy Model", y = "Gaussian Model") +
+  xlim(-3, 12) + ylim(-3, 12)
+
+```
+
+Interesting! We see that the Cauchy distribution makes some posterior predictions much more "outlier," owing to its thick tails!
+
+## 13M4
+
+Another one! This time with Student-t. Let's do it:
+
+```{r, message = FALSE, warning = FALSE, results = "hide"}
+
+# multilevel model with student-t distribution
+m10 <- ulam(
+  alist(
+    S ~ dbinom(N, p),
+    logit(p) <- a[tank],
+    a[tank] ~ dstudent(2, a_bar, sigma),
+    a_bar ~ dnorm(0, 1.5),
+    sigma ~ dexp(1)
+  ), data = d1, chains = 4, cores = 4, log_lik = T
+)
+
+```
+
+Awesome. Here are the posterior means among Gaussian, Cauchy and Student-t distributions:
+
+```{r, fig.width = 15, fig.height = 7.5, dpi = 300}
+
+p1 <- tibble(
+  param = rownames(precis(m10, depth = 2)),
+  n_eff = precis(m10, depth = 2) |> as_tibble() |> pull(mean)
+) |>
+  filter(str_detect(param, "a")) |>
+  filter(param != "a_bar" & param != "sigma") |>
+  left_join(
+    tibble(
+      param = rownames(precis(m2, depth = 2)),
+      n_eff = precis(m2, depth = 2) |> as_tibble() |> pull(mean)
+    ) |>
+      filter(param != "a_bar" & param != "sigma"),
+    by = "param"
+  ) |> 
+  ggplot(aes(x = n_eff.x, y = n_eff.y)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1) + 
+  labs(title = "Posterior Means", x = "Student-t Model", y = "Gaussian Model") +
+  xlim(-3, 12) + ylim(-3, 12)
+
+p2 <- tibble(
+  param = rownames(precis(m10, depth = 2)),
+  n_eff = precis(m10, depth = 2) |> as_tibble() |> pull(mean)
+) |>
+  filter(str_detect(param, "a")) |>
+  filter(param != "a_bar" & param != "sigma") |>
+  left_join(
+    tibble(
+      param = rownames(precis(m9, depth = 2)),
+      n_eff = precis(m9, depth = 2) |> as_tibble() |> pull(mean)
+    ) |>
+      filter(param != "a_bar" & param != "sigma"),
+    by = "param"
+  ) |> 
+  ggplot(aes(x = n_eff.x, y = n_eff.y)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1) + 
+  labs(title = "Posterior Means", x = "Student-t Model", y = "Cauchy Model") +
+  xlim(-3, 12) + ylim(-3, 12)
+
+p1 + p2
+
+```
+
+Really interesting! It seems that, compared to the Gaussian distribution, both Cauchy and Student-t distributions allow more outlier values. Once we compare the Student-t with the Cauchy model, though, we see that Student-t is much more modest!
+
+## 13M5
+## 13M6
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
