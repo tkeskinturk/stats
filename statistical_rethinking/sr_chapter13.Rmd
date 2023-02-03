@@ -6,7 +6,7 @@ output:
   html_document:
     theme: united
     toc: true
-    number_sections: true
+    number_sections: false
     code_folding: "hide"
 ---
 
@@ -49,7 +49,7 @@ y_i &\sim \text{Binomial}(1, p_i)
 \\
 \text{logit}(p_i) &= \alpha_{GROUP[i]} + \beta x_i
 \\
-\alpha_{GROUP} &\sim \text{Normal}(\theta, \sigma) \ & \text{Adaptive prior}
+\alpha_{j} &\sim \text{Normal}(\theta, \sigma) \ & \text{Adaptive prior}
 \\
 \theta &\sim \text{Normal}(0, 1.5)  \ & \text{Prior for the group guys}
 \\
@@ -61,7 +61,7 @@ $$
 
 ## 13E3
 
-I still assume a model with varying intercepts but no varying slopes (and still want to say *fixed slopes* here, too):
+I still assume a model with varying intercepts but no varying slopes:
 
 $$
 \begin{aligned}
@@ -69,7 +69,7 @@ y_i &\sim \text{Normal}(\mu_i, \sigma)
 \\
 \mu_i &= \alpha_{GROUP[i]} + \beta x_i
 \\
-\alpha_{GROUP} &\sim \text{Normal}(\theta, \tau) \ & \text{Adaptive prior}
+\alpha_{j} &\sim \text{Normal}(\theta, \tau) \ & \text{Adaptive prior}
 \\
 \theta &\sim \text{Normal}(0, 5)  \ & \text{Prior for the group guys}
 \\
@@ -91,7 +91,7 @@ y_i &\sim \text{Poisson}(\lambda_i)
 \\
 \text{log}(\lambda_i) &= \alpha_{GROUP[i]}
 \\
-\alpha_{GROUP} &\sim \text{Normal}(\theta, \sigma) \ & \text{Adaptive prior}
+\alpha_{j} &\sim \text{Normal}(\theta, \sigma) \ & \text{Adaptive prior}
 \\
 \theta &\sim \text{Normal}(0, 1)  \ & \text{Prior for the group guys}
 \\
@@ -109,13 +109,11 @@ y_i &\sim \text{Poisson}(\lambda_i)
 \\
 \text{log}(\lambda_i) &= \alpha_{GROUP1[i]} + \beta_{GROUP2[i]}
 \\
-\alpha_{GROUP1} &\sim \text{Normal}(\theta_1, \sigma_1) \ & \text{Adaptive prior for Group 1}
+\alpha_{j} &\sim \text{Normal}(\theta, \sigma_1) \ & \text{Adaptive prior for Group 1}
 \\
-\beta_{GROUP2} &\sim \text{Normal}(\theta_2, \sigma_2) \ & \text{Adaptive prior for Group 2}
+\beta_{j} &\sim \text{Normal}(0, \sigma_2) \ & \text{Adaptive prior for Group 2}
 \\
-\theta_1 &\sim \text{Normal}(0, 1)  \ & \text{Prior for Group 1}
-\\
-\theta_2 &\sim \text{Normal}(0, 1)  \ & \text{Prior for Group 2}
+\theta &\sim \text{Normal}(0, 1)  \ & \text{Prior for Group 1}
 \\
 \sigma_1 &\sim \text{Exponential}(1)  \ & \text{Standard deviation for Group 1}
 \\
@@ -137,7 +135,7 @@ d <- reedfrogs |>
   mutate(tank = 1:nrow(reedfrogs),
          size = ifelse(size == "small", 1, 2),
          pred = ifelse(pred == "no", 1, 2),
-         term = case_when( # an interaction variable for ease later
+         term = case_when( # an interaction variable for ease of use later
            size == 1 & pred == 1 ~ 1,
            size == 1 & pred == 2 ~ 2,
            size == 2 & pred == 1 ~ 3,
@@ -156,16 +154,7 @@ Let's also fit the model used in the textbook:
 
 ```{r, message = FALSE, warning = FALSE, results = "hide"}
 
-# just the linear model
 m1 <- ulam(
-  alist(
-    S ~ dbinom(N, p),
-    logit(p) <- a[tank],
-    a[tank] ~ dnorm(0, 1.5)
-  ), data = d1, chains = 4, cores = 4, log_lik = T)
-
-# multilevel model
-m2 <- ulam(
   alist(
     S ~ dbinom(N, p),
     logit(p) <- a[tank],
@@ -184,7 +173,7 @@ OK, we are going to fit several models for comparison: (a) either treatment alon
 ```{r, message = FALSE, warning = FALSE, results = "hide"}
 
 # model with size
-m3 <- ulam(
+m2 <- ulam(
   alist(
     S ~ dbinom(N, p),
     logit(p) <- a[tank] + b[size],
@@ -196,7 +185,7 @@ m3 <- ulam(
 )
 
 # model with pred
-m4 <- ulam(
+m3 <- ulam(
   alist(
     S ~ dbinom(N, p),
     logit(p) <- a[tank] + b[pred],
@@ -208,7 +197,7 @@ m4 <- ulam(
 )
 
 # model with both treatments
-m5 <- ulam(
+m4 <- ulam(
   alist(
     S ~ dbinom(N, p),
     logit(p) <- a[tank] + b1[size] + b2[pred],
@@ -221,7 +210,7 @@ m5 <- ulam(
 )
 
 # model with both treatments and their interactions
-m6 <- ulam(
+m5 <- ulam(
   alist(
     S ~ dbinom(N, p),
     logit(p) <- a[tank] + b1[size] + b2[pred] + b3[term],
@@ -236,16 +225,16 @@ m6 <- ulam(
 
 ```
 
-OK, we fitted the models. McElreath wants us to think about the *inferred variation across tanks*, which is basically the $\sigma$ parameter. Let me pull the posterior distributions of these parameters from each model and visualize the changes across models:
+We fitted the models. McElreath wants us to think about the *inferred variation across tanks*, which is basically the $\sigma$ parameter. Let me pull the posterior distributions of these parameters from each model and visualize the changes in $\sigma$:
 
-```{r, fig.width = 8, fig.height = 6, dpi = 300}
+```{r, fig.width = 8, fig.height = 4, dpi = 300}
 
 bind_rows(
+  precis(m1, depth = 2, pars = "sigma") |> t() |> as_tibble() |> janitor::clean_names(),
   precis(m2, depth = 2, pars = "sigma") |> t() |> as_tibble() |> janitor::clean_names(),
   precis(m3, depth = 2, pars = "sigma") |> t() |> as_tibble() |> janitor::clean_names(),
   precis(m4, depth = 2, pars = "sigma") |> t() |> as_tibble() |> janitor::clean_names(),
-  precis(m5, depth = 2, pars = "sigma") |> t() |> as_tibble() |> janitor::clean_names(),
-  precis(m6, depth = 2, pars = "sigma") |> t() |> as_tibble() |> janitor::clean_names()
+  precis(m5, depth = 2, pars = "sigma") |> t() |> as_tibble() |> janitor::clean_names()
 ) |> mutate(
   models = c("Baseline Model", "Model with Size", "Model with Pred", "Model with Both", "Interaction Model")
 ) |> 
@@ -266,10 +255,11 @@ Let's compare these models to have a sense of model fit:
 
 ```{r}
 
-rethinking::compare(m2, m3, m4, m5, m6) |> 
+rethinking::compare(m1, m2, m3, m4, m5) |> 
   # prettify the results
   as_tibble() |> 
-  mutate(models = c("Model with Pred", "Model with Interactions", "Model with Size", "Model with Both", "Baseline Model")) |> 
+  mutate(models = c(
+    "Model with Pred", "Model with Interactions", "Model with Size", "Model with Both", "Baseline Model")) |> 
   relocate(models) |> 
   kable(digits = 2, align = "c")
 
@@ -286,7 +276,8 @@ Now, we are going to fit the same varying intercept model with a Cauchy distribu
 ```{r, message = FALSE, warning = FALSE, results = "hide"}
 
 # multilevel model with cauchy distribution
-m7 <- ulam(
+set.seed(1123)
+m6 <- ulam(
   alist(
     S ~ dbinom(N, p),
     logit(p) <- a[tank],
@@ -298,13 +289,13 @@ m7 <- ulam(
 
 ```
 
-Well, no divergent transitions. Looking at the trankplots, though, I saw that there are some wild behaviors of certain parameter values. Let's look at the `n_eff` values for all parameters to spot the problems:
+Well, no divergent transitions. Looking at the trankplots, though, I saw that there are some wild behaviors of certain parameters. Let's look at the `n_eff` values for all parameters to spot the problems:
 
-```{r, fig.width = 7.5, fig.height = 7.5, dpi = 300}
+```{r, fig.width = 7.5, fig.height = 10, dpi = 300}
 
 tibble(
-  param = rownames(precis(m7, depth = 2)),
-  n_eff = precis(m7, depth = 2) |> as_tibble() |> pull(n_eff)) |> 
+  param = rownames(precis(m6, depth = 2)),
+  n_eff = precis(m6, depth = 2) |> as_tibble() |> pull(n_eff)) |> 
   filter(param != "a_bar" & param != "sigma") |> 
   ggplot(aes(x = reorder(param, n_eff), n_eff)) +
   geom_point() +
@@ -318,17 +309,18 @@ Yeah, some of the `n_eff` values are horrible. Let's follow McElreath and fit th
 ```{r, message = FALSE, warning = FALSE, results = "hide"}
 
 # multilevel model with cauchy distribution, revised
-m8 <- ulam(m7, data = d1, chains = 4, cores = 4, log_lik = T, control = list(adapt_delta = 0.99))
+set.seed(1123)
+m7 <- ulam(m6, data = d1, chains = 4, cores = 4, log_lik = T, control = list(adapt_delta = 0.99))
 
 ```
 
 This time a lot of warnings (algorithmic issues), though no divergent transitions again. Let's see the `n_eff` values:
 
-```{r, fig.width = 7.5, fig.height = 7.5, dpi = 300}
+```{r, fig.width = 7.5, fig.height = 10, dpi = 300}
 
 tibble(
-  param = rownames(precis(m8, depth = 2)),
-  n_eff = precis(m8, depth = 2) |> as_tibble() |> pull(n_eff)) |> 
+  param = rownames(precis(m7, depth = 2)),
+  n_eff = precis(m7, depth = 2) |> as_tibble() |> pull(n_eff)) |> 
   filter(param != "a_bar" & param != "sigma") |> 
   ggplot(aes(x = reorder(param, n_eff), n_eff)) +
   geom_point() +
@@ -342,7 +334,8 @@ I guess I am going to need to reparametrize. Let's do it:
 ```{r, message = FALSE, warning = FALSE, results = "hide"}
 
 # multilevel model with cauchy distribution, second revision
-m9 <- ulam(
+set.seed(1123)
+m8 <- ulam(
   alist(
     S ~ dbinom(N, p),
     logit(p) <- a_bar + z[tank]*sigma,
@@ -360,15 +353,15 @@ OK, I got no warnings, neither divergent transitions nor algorithmic problems. L
 ```{r, fig.width = 7.5, fig.height = 7.5, dpi = 300}
 
 tibble(
-  param = rownames(precis(m9, depth = 2)),
-  n_eff = precis(m9, depth = 2) |> as_tibble() |> pull(n_eff)
+  param = rownames(precis(m8, depth = 2)),
+  n_eff = precis(m8, depth = 2) |> as_tibble() |> pull(n_eff)
 ) |>
   filter(str_detect(param, "a")) |>
   filter(param != "a_bar" & param != "sigma") |>
   left_join(
     tibble(
-      param = rownames(precis(m8, depth = 2)),
-      n_eff = precis(m8, depth = 2) |> as_tibble() |> pull(n_eff)
+      param = rownames(precis(m7, depth = 2)),
+      n_eff = precis(m7, depth = 2) |> as_tibble() |> pull(n_eff)
     ) |>
       filter(param != "a_bar" & param != "sigma"),
     by = "param"
@@ -380,20 +373,20 @@ tibble(
 
 ```
 
-It seems that this is much better, though there is a clump of parameters close to 0. Let's compare the posterior means of these models:
+It seems that this is somewhat better, though there is a clump of parameters close to 0. Let's compare the posterior means of these models:
 
 ```{r, fig.width = 7.5, fig.height = 7.5, dpi = 300}
 
 tibble(
-  param = rownames(precis(m9, depth = 2)),
-  n_eff = precis(m9, depth = 2) |> as_tibble() |> pull(mean)
+  param = rownames(precis(m8, depth = 2)),
+  n_eff = precis(m8, depth = 2) |> as_tibble() |> pull(mean)
 ) |>
   filter(str_detect(param, "a")) |>
   filter(param != "a_bar" & param != "sigma") |>
   left_join(
     tibble(
-      param = rownames(precis(m2, depth = 2)),
-      n_eff = precis(m2, depth = 2) |> as_tibble() |> pull(mean)
+      param = rownames(precis(m1, depth = 2)),
+      n_eff = precis(m1, depth = 2) |> as_tibble() |> pull(mean)
     ) |>
       filter(param != "a_bar" & param != "sigma"),
     by = "param"
@@ -406,7 +399,7 @@ tibble(
 
 ```
 
-Interesting! We see that the Cauchy distribution makes some posterior predictions much more "outlier," owing to its thick tails!
+Interesting! We see that the Cauchy distribution makes some posterior predictions much more of an "outlier," owing to its thick tails!
 
 ## 13M4
 
@@ -415,7 +408,8 @@ Another one! This time with Student-t. Let's do it:
 ```{r, message = FALSE, warning = FALSE, results = "hide"}
 
 # multilevel model with student-t distribution
-m10 <- ulam(
+set.seed(1123)
+m9 <- ulam(
   alist(
     S ~ dbinom(N, p),
     logit(p) <- a[tank],
@@ -432,15 +426,15 @@ Awesome. Here are the posterior means among Gaussian, Cauchy and Student-t distr
 ```{r, fig.width = 15, fig.height = 7.5, dpi = 300}
 
 p1 <- tibble(
-  param = rownames(precis(m10, depth = 2)),
-  n_eff = precis(m10, depth = 2) |> as_tibble() |> pull(mean)
+  param = rownames(precis(m9, depth = 2)),
+  n_eff = precis(m9, depth = 2) |> as_tibble() |> pull(mean)
 ) |>
   filter(str_detect(param, "a")) |>
   filter(param != "a_bar" & param != "sigma") |>
   left_join(
     tibble(
-      param = rownames(precis(m2, depth = 2)),
-      n_eff = precis(m2, depth = 2) |> as_tibble() |> pull(mean)
+      param = rownames(precis(m1, depth = 2)),
+      n_eff = precis(m1, depth = 2) |> as_tibble() |> pull(mean)
     ) |>
       filter(param != "a_bar" & param != "sigma"),
     by = "param"
@@ -452,15 +446,15 @@ p1 <- tibble(
   xlim(-3, 12) + ylim(-3, 12)
 
 p2 <- tibble(
-  param = rownames(precis(m10, depth = 2)),
-  n_eff = precis(m10, depth = 2) |> as_tibble() |> pull(mean)
+  param = rownames(precis(m9, depth = 2)),
+  n_eff = precis(m9, depth = 2) |> as_tibble() |> pull(mean)
 ) |>
   filter(str_detect(param, "a")) |>
   filter(param != "a_bar" & param != "sigma") |>
   left_join(
     tibble(
-      param = rownames(precis(m9, depth = 2)),
-      n_eff = precis(m9, depth = 2) |> as_tibble() |> pull(mean)
+      param = rownames(precis(m8, depth = 2)),
+      n_eff = precis(m8, depth = 2) |> as_tibble() |> pull(mean)
     ) |>
       filter(param != "a_bar" & param != "sigma"),
     by = "param"
@@ -475,44 +469,350 @@ p1 + p2
 
 ```
 
-Really interesting! It seems that, compared to the Gaussian distribution, both Cauchy and Student-t distributions allow more outlier values. Once we compare the Student-t with the Cauchy model, though, we see that Student-t is much more modest!
+Really interesting! It seems that, compared to the Gaussian distribution, both Cauchy and Student-t distributions allow more "outlier" values. Once we compare the Student-t with the Cauchy model, though, we see that Student-t is much more modest!
 
 ## 13M5
+
+Hello chimpanzees. Let's load the data and fit the model from the book:
+
+```{r, message = FALSE, warning = FALSE, results = "hide"}
+
+# data issues
+data(chimpanzees)
+d <- chimpanzees |> 
+  mutate(treatment = 1 + prosoc_left + 2*condition)
+d <- list(
+  pulled_left = d$pulled_left,
+  actor = d$actor,
+  block_id = d$block,
+  treatment = as.integer(d$treatment)
+)
+
+# model
+m1 <-ulam(
+  alist(
+    pulled_left ~ dbinom(1, p),
+    logit(p) <- a[actor] + g[block_id] + b[treatment],
+    b[treatment] ~ dnorm(0, 0.5),
+    ## adaptive stuff
+    a[actor] ~ dnorm(a_bar, sigma_a),
+    g[block_id] ~ dnorm(0, sigma_g),
+    ## hyper-priors
+    a_bar ~ dnorm(0, 1.5),
+    sigma_a ~ dexp(1),
+    sigma_g ~ dexp(1)),
+  data = d, chains = 4, cores = 4, log_lik = TRUE)
+
+```
+
+Alright. I am going to modify this model so that `block` will contain a new parameter $\hat{\gamma}$. This gets at my collinearity issue, I suppose.
+
+```{r, message = FALSE, warning = FALSE, results = "hide"}
+
+m2 <-ulam(
+  alist(
+    pulled_left ~ dbinom(1, p),
+    logit(p) <- a[actor] + g[block_id] + b[treatment],
+    b[treatment] ~ dnorm(0, 0.5),
+    ## adaptive stuff
+    a[actor] ~ dnorm(a_bar, sigma_a),
+    g[block_id] ~ dnorm(gamma, sigma_g),
+    ## hyper-priors
+    a_bar ~ dnorm(0, 1.5),
+    gamma ~ dnorm(0, 1.5),
+    sigma_a ~ dexp(1),
+    sigma_g ~ dexp(1)),
+  data = d, chains = 4, cores = 4, log_lik = TRUE)
+
+```
+
+We have the models. Let's first compare the model performance:
+
+```{r}
+
+rethinking::compare(m1, m2) |> 
+  # prettify the results
+  as_tibble() |> 
+  mutate(models = c(
+    "Model without Gamma", "Model with Gamma")) |> 
+  relocate(models) |> 
+  kable(digits = 2, align = "c")
+
+```
+
+No difference. Let's compare the posterior distribution of our parameters, which I think will show some of the action:
+
+```{r, fig.width = 10, fig.height = 7.5, dpi = 300}
+
+tibble(
+  param = coef(m1) |> 
+    names() |> as_tibble() |> slice(1:20) |> pull(),
+  m1 = rethinking::coef(m1) |> 
+    as_tibble() |> slice(1:20) |> pull(),
+  m2 = rethinking::coef(m2) |> 
+    as_tibble() |> slice(1:20) |> pull()
+) |> 
+  ggplot() +
+  geom_point(aes(x = reorder(param, desc(param)), y = m1), shape = 16, col = "red") +
+  geom_point(aes(x = reorder(param, desc(param)), y = m2), shape = 17, col = "blue") +
+  labs(title = "Posterior Distribution of Parameters Across Two Models", 
+       x = "Models", y = "Value") + coord_flip()
+
+```
+
+There is not much difference for intercepts, though the $\sigma$ parameters changed strongly. Notice that the emphasis put on $\sigma_A$ and $\sigma_B$ is actually reversed: the inclusion of $\gamma$ parameter resulted in a reemphasis of the uncertainty around the parameters. **Overparametrization!**
+
 ## 13M6
 
+Let's prepare a dataframe with one observation and fit four models according to McElreath's specifications below:
 
+```{r, message = FALSE, warning = FALSE, results = "hide"}
 
+d <- list(y = 0)
 
+# model NN
+m1 <- ulam(
+  alist(
+    y ~ dnorm(mu, 1), mu <- a, a ~ dnorm(10, 1) 
+  ), data= d)
 
+# model NT
+m2 <- ulam(
+  alist(
+    y ~ dnorm(mu, 1), mu <- a, a ~ dstudent(2, 10, 1)
+  ), data= d)
 
+# model TN
+m3 <- ulam(
+  alist(
+    y ~ dstudent(2, mu, 1), mu <- a, a ~ dnorm(10, 1)
+  ), data= d)
 
+# model TT
+m4 <- ulam(
+  alist(
+    y ~ dstudent(2, mu, 1), mu <- a, a ~ dstudent(2, 10, 1)
+  ), data= d)
 
+```
 
+Alright, let's get the posterior distributions and visualize the differences:
 
+```{r, fig.width = 7,5, fig.height = 5, dpi = 300}
 
+bind_cols(
+  tidybayes::tidy_draws(m1) |> select(NN = a),
+  tidybayes::tidy_draws(m2) |> select(NT = a),
+  tidybayes::tidy_draws(m3) |> select(TN = a),
+  tidybayes::tidy_draws(m4) |> select(TT = a)
+) |>
+  pivot_longer(
+    cols = everything(),
+    names_to = "Model",
+    values_to = "Draws"
+  ) |>
+  ggplot(aes(x = Draws)) +
+  geom_density(aes(fill = Model), alpha = 0.5) +
+  scale_fill_manual(values = wesanderson::wes_palette("IsleofDogs1", n = 4)) +
+  theme(legend.position = "top") +
+  labs(title = "Posterior Draws", x = "Draws", y = "Density")
 
+```
 
+As we can see, the tails are much wider once the Student-t distribution comes into the play.
 
+# Hard Questions
 
+## 13H1
 
+Alright, this seems interesting. Let's load the data.
 
+```{r}
 
+data(bangladesh)
+d <- bangladesh |> 
+  mutate(district_id = as.integer(as.factor(district)))
+d <- list(d = d$district_id, c = d$use.contraception)
 
+```
 
+Aha, I hear some words from you, Mr. McElreath! I am going to fit a *fixed effects* model and a *multilevel model* below:
 
+```{r, message = FALSE, warning = FALSE, results = "hide"}
 
+# fixed effects model
+m1 <- ulam(
+  alist(
+    c ~ dbinom(1, p),
+    logit(p) <- a[d],
+    a[d] ~ dnorm(0, 1)
+  ), data = d, chains = 4, cores = 4, log_lik = T
+)
 
+# multilevel model
+m2 <- ulam(
+  alist(
+    c ~ dbinom(1, p),
+    logit(p) <- a[d],
+    a[d] ~ dnorm(a_bar, sigma),
+    a_bar ~ dnorm(0, 1),
+    sigma ~ dexp(1)
+  ), data = d, chains = 4, cores = 4, log_lik = T
+)
 
+```
 
+Awesome! McElreath now wants us to plot the predicted proportions of women in each district. Here are the posterior distributions:
 
+```{r, fig.width = 15, fig.height = 5, dpi = 300}
 
+# predictions from fixed models
+pred1 <- tibble(d = 1:60) |> 
+  add_linpred_draws(m1, transform = T) |>
+  janitor::clean_names() |> 
+  group_by(d) |> 
+  summarize(c1 = mean(linpred))
 
+# predictions from multilevel model
+pred2 <- tibble(d = 1:60) |> 
+  add_linpred_draws(m2, transform = T) |>
+  janitor::clean_names() |> 
+  group_by(d) |> 
+  summarize(c2 = mean(linpred))
 
+# merge
+pred <- inner_join(pred1, pred2, by = "d")
 
+# plot
+pred |>
+  ggplot() +
+  geom_point(aes(x = factor(d), y = c1),
+             size = 2,
+             shape = 14,
+             col = "blue") +
+  geom_point(aes(x = factor(d), y = c2),
+             size = 2,
+             shape = 18,
+             col = "red") +
+  geom_hline(aes(yintercept = mean(c1))) +
+  theme_ipsum(grid = FALSE) +
+  labs(title = "% Predictions Across Two Models", x = "Districts", y = "%")
 
+```
 
+As we can see, the multilevel model (red points) shrank the estimates toward the mean. This is what we expected and talked about in class.
 
+## 13H2
 
+OK, I am going to work with the `Trolley` data. Let's load and wrangle.
 
+```{r}
 
+data(Trolley)
+d <- Trolley
+d <- list(
+  id = coerce_index(d$id),
+  R = d$response,
+  A = d$action,
+  I = d$intention,
+  C = d$contact
+)
 
+```
+
+Two models - one with fixed effects and one with varying intercepts. I am going to treat the response variable as continuous for these models.
+
+```{r, message = FALSE, warning = FALSE, results = "hide"}
+
+m1 <- ulam(
+  alist(
+    R ~ dnorm(mu, sigma),
+    mu <- a + b1*A + b2*I + b3*C,
+    c(a, b1, b2, b3) ~ dnorm(0, 2.5),
+    sigma ~ dexp(1)
+  ), data = d, chains = 4, cores = 4, log_lik = T
+)
+
+m2 <- ulam(
+  alist(
+    R ~ dnorm(mu, sigma),
+    mu <- a + b1*A + b2*I + b3*C + s[id],
+    c(a, b1, b2, b3) ~ dnorm(0, 2.5),
+    s[id] ~ dnorm(0, sigma),
+    sigma ~ dexp(1),
+    sigma ~ dexp(1)
+  ), data = d, chains = 4, cores = 4, log_lik = T
+)
+
+```
+
+**Comparison: Model Performance**. Let's use WAIC to compare these models.
+
+```{r}
+
+rethinking::compare(m1, m2) |> 
+  # prettify the results
+  as_tibble() |> 
+  mutate(models = c(
+    "Model with Varying Intercepts", "Model without Varying Intercepts")) |> 
+  relocate(models) |> 
+  kable(digits = 2, align = "c")
+
+```
+
+As expected. The model with varying intercepts has much more predictive capacity than the one without varying intercepts. Once we look at the output, we also see that the `sigma` in Model 1 has a strong magnitude, indicating that individual variation is powerful in this model.
+
+## 13H3
+
+Let's add the `story` to our list and specify a cross-classified multilevel model:
+
+```{r, message = FALSE, warning = FALSE, results = "hide"}
+
+# data
+d <- Trolley
+d <- list(
+  id = coerce_index(d$id),
+  R = d$response,
+  A = d$action,
+  I = d$intention,
+  C = d$contact,
+  S = d$story
+)
+
+# model
+m3 <- ulam(
+  alist(
+    R ~ dnorm(mu, sigma1),
+    mu <- a + b1*A + b2*I + b3*C + s1[id] + s2[S],
+    c(a, b1, b2, b3) ~ dnorm(0, 2.5),
+    s1[id] ~ dnorm(0, sigma2),
+    s2[S] ~ dnorm(0, sigma3),
+    sigma1 ~ dexp(1),
+    sigma2 ~ dexp(1),
+    sigma3 ~ dexp(1)
+  ), data = d, chains = 4, cores = 4, log_lik = T
+)
+
+```
+
+**Comparison: Model Performance**. Let's use WAIC to compare the models.
+
+```{r}
+
+rethinking::compare(m1, m2, m3) |> 
+  # prettify the results
+  as_tibble() |> 
+  mutate(models = c(
+    'Cross-Classified Model', "Model with Varying Intercepts", "Model without Varying Intercepts")) |> 
+  relocate(models) |> 
+  kable(digits = 2, align = "c")
+
+```
+
+Awesome! The  cross-classified model is much better, as different stories pick up a lot of variation from the data.
+
+## 13H4
+
+This is the same question as 13M1. Nice!
+
+Thank you!
