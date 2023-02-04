@@ -1,0 +1,249 @@
+---
+title: "Soc723 - SR Chapter 14"
+author: "Turgut Keskintürk"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: united
+    toc: true
+    number_sections: false
+    code_folding: "hide"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(fig.align = "center")
+
+# load the relevant packages
+pacman::p_load(
+  tidyverse,
+  purrr,
+  rethinking,
+  rstan,
+  tidybayes,
+  tidybayes.rethinking,
+  patchwork,
+  hrbrthemes,
+  knitr,
+  MASS
+)
+theme_set(theme_ipsum_rc()) # theme set for the plots
+
+```
+
+Hello there! Let's start with our exercises for McElreath's *Statistical Rethinking*, Chapter 14.
+
+## 14E1
+
+Adding varying slopes to the model:
+
+$$
+\begin{aligned}
+y_i &\sim \text{Normal}(\mu_i, \sigma) \ &\ \text{Likelihood}
+\\
+\mu_i &= \alpha_{GROUP[i]} + \beta_{GROUP[I]} x_i \ &\ \text{Linear Model}
+\\
+\left[
+\begin{array}{c|c}
+\alpha_{GROUP[i]}
+\\
+\beta_{GROUP[i]}
+\end{array}
+\right] &\sim \text{MVNormal}(
+\left[
+\begin{array}{c|c}
+\alpha
+\\
+\beta
+\end{array}
+\right], S)  \ &\ \text{Varying Effects}
+\\
+S &= 
+\left(
+\begin{array}{c|c}
+\sigma_{\alpha} \ \ \ 0
+\\
+0 \ \ \ \sigma_{\beta}
+\end{array}
+\right)
+R
+\left(
+\begin{array}{c|c}
+\sigma_{\alpha} \ \ \ 0
+\\
+0 \ \ \ \sigma_{\beta}
+\end{array}
+\right)  \ &\ \text{Covariance Matrix}
+\\
+\\
+\alpha &\sim \text{Normal}(0, 10)   \ &\ \text{Good old priors}
+\\
+\beta &\sim \text{Normal}(0, 1)
+\\
+\sigma &\sim \text{Exponential}(1)
+\\
+\sigma_{\alpha} &\sim \text{Exponential}(1)
+\\
+\sigma_{\beta} &\sim \text{Exponential}(1)
+\\
+R &\sim \text{LKJcorr}(2)  \ &\ \text{Prior for Correlation Matrix}
+\end{aligned}
+$$
+
+## 14E2
+
+The question wants us to think about a scenario where higher intercepts mean steeper slopes.
+
+Let's assume that we model one's political donations as a function of campaign contact. Let's also assume that we vary this effect across political awareness scores (low, medium, high), as well as varying the intercepts (donations) along this dimension.
+
+It is reasonable to expect that political awareness induces higher levels of political donations.
+
+If contacts from the campaign activate channels for more donations only among the highly aware, we have a positive correlation!
+
+## 14E3
+
+This might occur when there is too much shrinkage to the mean, indicating less variation among clusters. The reasons can be (a) the use of highly informative priors or (b) the fact that there is not much variation among groups in the first place.
+
+## 14M1
+
+Alright, gonna use McElreath's ugly code for a function, as we will need it three times.
+
+```{r, message = FALSE, warning = FALSE, results = "hide"}
+
+ugly_initialize <- function(rho_value) {
+  a <- 3.5
+  b <- (-1)
+  sigma_a <- 1
+  sigma_b <- 0.5
+  rho <- (rho_value)
+  Mu <- c(a, b)
+  cov_ab <- sigma_a * sigma_b * rho
+  Sigma <-
+    matrix(c(sigma_a ^ 2, cov_ab, cov_ab, sigma_b ^ 2), ncol = 2)
+  sigmas <- c(sigma_a, sigma_b)
+  Rho <- matrix(c(1, rho, rho, 1), nrow = 2)
+  Sigma <- diag(sigmas) %*% Rho %*% diag(sigmas)
+  N_cafes <- 20
+  set.seed(5)
+  vary_effects <- mvrnorm(N_cafes, Mu, Sigma)
+  a_cafe <- vary_effects[, 1]
+  b_cafe <- vary_effects[, 2]
+  N_visits <- 10
+  afternoon <- rep(0:1, N_visits * N_cafes / 2)
+  cafe_id <- rep(1:N_cafes, each = N_visits)
+  mu <- a_cafe[cafe_id] + b_cafe[cafe_id] * afternoon
+  sigma <- 0.5
+  wait <- rnorm(N_visits * N_cafes, mu, sigma)
+  d <- data.frame(cafe = cafe_id,
+                  afternoon = afternoon,
+                  wait = wait)
+  return(d)
+}
+
+```
+
+Let's fit the model from the book, with `rho` equals to -0.7.
+
+```{r, message = FALSE, warning = FALSE, results = "hide"}
+
+d <- ugly_initialize(-0.7)
+
+# the model
+m1 <- ulam(
+  alist(
+    wait ~ normal(mu, sigma),
+    mu <- a_cafe[cafe] + b_cafe[cafe] * afternoon,
+    c(a_cafe, b_cafe)[cafe] ~ multi_normal(c(a, b), Rho, sigma_cafe),
+    a ~ normal(5, 2),
+    b ~ normal(-1, 0.5),
+    sigma_cafe ~ dexp(1),
+    sigma ~ dexp(1),
+    Rho ~ lkj_corr(2)
+  ),
+  data = d, chains = 4, cores = 4, log_lik = T)
+
+```
+
+OK, let's fit the same model again, this time changing the `rho` to 0.
+
+```{r, message = FALSE, warning = FALSE, results = "hide"}
+
+d <- ugly_initialize(0)
+
+# the model
+m2 <- ulam(
+  alist(
+    wait ~ normal(mu, sigma),
+    mu <- a_cafe[cafe] + b_cafe[cafe] * afternoon,
+    c(a_cafe, b_cafe)[cafe] ~ multi_normal(c(a, b), Rho, sigma_cafe),
+    a ~ normal(5, 2),
+    b ~ normal(-1, 0.5),
+    sigma_cafe ~ dexp(1),
+    sigma ~ dexp(1),
+    Rho ~ lkj_corr(2)
+  ),
+  data = d, chains = 4, cores = 4, log_lik = T)
+
+```
+
+We now have two model fits. Let's generate draws for the posterior distribution of the `rho` parameter and inspect the differences.
+
+```{r, fig.width = 8, fig.height = 4, dpi = 300}
+
+bind_cols(
+  tidy_draws(m1) |> janitor::clean_names() |> dplyr::select(M1 = rho_1_2),
+  tidy_draws(m2) |> janitor::clean_names() |> dplyr::select(M2 = rho_1_2)
+) |> 
+  pivot_longer(cols = everything(), names_to = "Models", values_to = "Rho") |> 
+  ggplot(aes(x = Rho)) +
+  geom_density(fill = "gray90") +
+  facet_wrap(~ Models) +
+  labs("The Change in rho Parameter", x = "Rho", y = "Density")
+
+```
+
+Neat!
+
+## 14M2
+
+The same simulation (where I assume I am going to use `rho` = -0.7), with a different model. Let's go for it!
+
+```{r, message = FALSE, warning = FALSE, results = "hide"}
+
+d <- ugly_initialize(-0.7)
+
+# the model
+m3 <- ulam(
+  alist(
+    wait ~ normal(mu, sigma),
+    mu <- a_cafe[cafe] + b_cafe[cafe] * afternoon,
+    a_cafe[cafe] ~ dnorm(a, sigma_alpha),
+    b_cafe[cafe] ~ dnorm(b, sigma_beta),
+    a ~ normal(0, 10),
+    b ~ normal(0, 10),
+    sigma ~ dexp(1),
+    sigma_alpha ~ dexp(1),
+    sigma_beta ~ dexp(1)
+  ),
+  data = d, chains = 4, cores = 4, log_lik = T)
+
+```
+
+Alright, we have our model. Let's compare these two models:
+
+```{r}
+
+rethinking::compare(m1, m3) |> 
+  # prettify the results
+  as_tibble() |> 
+  mutate(models = c(
+    "New Model", "Original Model")) |> 
+  relocate(models) |> 
+  kable(digits = 2, align = "c")
+
+```
+
+No difference at all, though we did not explicitly model the relationship between intercepts and slopes this time. I believe this relation is not particularly informative in this model, though I believe more information is better in these circumstances!
+
+Thank you!
