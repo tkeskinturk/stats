@@ -17,13 +17,204 @@ knitr::opts_chunk$set(fig.align = "center")
 
 # load the relevant packages
 pacman::p_load(
-  tidyverse, purrr, patchwork, hrbrthemes, knitr
+  tidyverse, purrr, causaldata, patchwork, hrbrthemes, knitr, dagitty, ggdag
 )
 theme_set(theme_ipsum_rc()) # theme set for the plots
 
 ```
 
-Hello there! Let's start with our exercises for Huntington-Klein's *The Effect*, Chapter 7.
+Hello there! Let's start our exercises for Huntington-Klein's *The Effect*, Chapter 7.
 
 ## Q1
 
+Here are the responses to the questions:
+
+a) This is **true**. A nice causal effect on viewership is the existence of celebrities.
+b) This is **false**. The diagram should include just one variable (e.g., `Evening`), with those values as responses.
+c) This is **false**. The fact that we cannot measure something is not a reason for not including it.
+d) This is **false**. The information is irrelevant for the DAG.
+
+## Q2
+
+OK, here is the DAG with the features described in the question:
+
+```{r, fig.width = 8, fig.height = 8, dpi = 300}
+
+dag <- dagitty(
+  "
+  dag
+  {
+  LongShift [exposure]
+  LowQualityCare [outcome]
+  PolicyPreferences [unobserved]
+  LongShift -> LowQualityCare
+  LongShift -> DoctorTired
+  LongShift -> DoctorExperience
+  DoctorTired -> LowQualityCare
+  DoctorExperience -> LowQualityCare
+  Hospital -> LongShift
+  Hospital -> HospitalFunding
+  Hospital -> HospitalCrowded
+  HospitalFunding -> LowQualityCare
+  HospitalCrowded -> LowQualityCare
+  PoliciesShift -> LongShift
+  PoliciesCares -> LowQualityCare
+  PolicyPreferences -> PoliciesShift
+  PolicyPreferences -> PoliciesCares
+  }
+  "
+)
+
+set.seed(11235)
+ggdag_status(dag, text_col = "white", text_size = 1.4) + 
+  scale_color_manual(values = c("#720500", "#244224", "#3A5874"),
+                     labels = c("Treatment", "Unobserved", "Outcome")) +
+  labs(color = "Nodes") +
+  theme_dag(legend.position = "top")
+
+```
+
+## Q3
+
+Here are the responses to the questions:
+
+a) The **treatment** is `Funding`, while the **outcome** is `Achievement`.
+b) Here are some relevant variables (wanted to keep it short, sorry but also not sorry): `GeographicRegion`, `StudentSES` and `LaggedFunding`. Let us assume that all of these variables can be observed.
+c) Here are the shared variables: `GeographicRegion` and `LaggedFunding`.
+d) These are *confounders*, so we want to make sure they stay in the DAG and will be adjusted for later.
+e) Here is the causal diagram:
+
+```{r, fig.width = 8, fig.height = 6, dpi = 300}
+
+dag <- dagitty(
+  "
+  dag
+  {
+  Funding [exposure]
+  Achievement [outcome]
+  Funding->Achievement
+  GeographicRegion->Funding
+  GeographicRegion->Achievement
+  StudentSES->Achievement
+  GeographicRegion->StudentSES
+  LaggedFunding->Funding
+  LaggedFunding->Achievement
+  GeographicRegion->LaggedFunding
+  }
+  "
+)
+
+set.seed(11235)
+ggdag_status(dag, text_col = "white", text_size = 1.4) + 
+  scale_color_manual(values = c("#720500", "#3A5874"),
+                     labels = c("Treatment", "Outcome")) +
+  labs(color = "Nodes") +
+  theme_dag(legend.position = "top")
+
+```
+
+f) OK, it seems that the inclusion of `StudentSES` is not important to explore the causal effect, as conditioning on others is enough.
+
+
+```{r, fig.width = 8, fig.height = 6, dpi = 300}
+
+dag <- dagitty(
+  "
+  dag
+  {
+  Funding [exposure]
+  Achievement [outcome]
+  Funding->Achievement
+  GeographicRegion->Funding
+  GeographicRegion->Achievement
+  LaggedFunding->Funding
+  LaggedFunding->Achievement
+  GeographicRegion->LaggedFunding
+  }
+  "
+)
+
+set.seed(11235)
+ggdag_status(dag, text_col = "white", text_size = 1.4) + 
+  scale_color_manual(values = c("#720500", "#3A5874"),
+                     labels = c("Treatment", "Outcome")) +
+  labs(color = "Nodes") +
+  theme_dag(legend.position = "top")
+
+```
+
+## Q4
+
+Here are the reasons why we do DAG simplifications:
+
+a) **Unimportance**: when the causal effect in question is not important or it is negligible.
+b) **Redundancy**: when the variables occupy the same space. For instance, in the example above, we can change `GeographicRegion` to two distinct variables `GeographicSES` and `GeographicSchoolN`, though the implications would remain the same.
+c) **Mediators**: if the variable is just a mediator, we can drop it - though I do not agree that we should drop it. Why the hell?
+d) **Irrelevance**: As our interest is on the causal path from the treatment to the outcome, we do not need to keep anything that does not affect that relationship - e.g., the `StudentSES` example above, which I dropped.
+
+## Q5
+
+Two ways: (1) adding a time dimension (just subscript everything with $t$) or (2) finding a source of randomness in the variable.
+
+## Q6
+
+Alright, these days I am thinking about the transmission of cultural beliefs from parents to teens. 
+
+a) Let's call the cause `ParentBeliefs` and the outcome `ChildBeliefs`. This is not a "treatment" per se, but hey, it is life!
+b) I am going to write 5 variables (of course) for the data generating process: `GeneticBackground` (lol, unobserved), `FamilyEnvironment`, `SchoolEnvironment`, `ParentalEducation`, and `ReligiousAffiliation`.
+c) Let's draw the DAG (with some silly mistakes, so I do not have to wait for 15 minutes):
+
+```{r, fig.width = 8, fig.height = 6, dpi = 300}
+
+dag <- dagitty(
+  "
+  dag
+  {
+  ParentBeliefs [exposure]
+  ChildBeliefs [outcome]
+  GeneticBackground [unobserved]
+  ParentBeliefs -> ChildBeliefs
+  ParentBeliefs <- GeneticBackground -> ChildBeliefs
+  ParentBeliefs <- FamilyEnvironment -> ChildBeliefs
+  ParentBeliefs <- ReligiousAffiliation -> ChildBeliefs
+  ParentBeliefs <- ParentalEducation -> ChildBeliefs
+  SchoolEnvironment -> ChildBeliefs
+  }
+  "
+)
+
+set.seed(11235)
+ggdag_status(dag, text_col = "white", text_size = 1.25) + 
+  scale_color_manual(values = c("#720500", "#244224", "#3A5874"),
+                     labels = c("Treatment", "Unobserved", "Outcome")) +
+  labs(color = "Nodes") +
+  theme_dag(legend.position = "top")
+
+```
+
+d) OK, I waited for 15 minutes. The bad assumption: `ParentalEducation` should affect `SchoolEnvironment` and `ReligiousAffiliation`, as it is highly probably that parents with differing levels of education are differentiated along these variables.
+
+## Q7
+
+I am going to add the diagram the time dimension, so that it makes some sense:
+
+```{r, fig.width = 15, fig.height = 5, dpi = 300}
+
+dag <- dagitty(
+  "
+  dag
+  {
+  MotivationT1 -> MotivationT2
+  AchievementT1 -> AchievementT2
+  MotivationT1 -> AchievementT2
+  AchievementT1 -> MotivationT2
+  }
+  "
+)
+
+set.seed(11235)
+ggdag_classic(dag, layout = "grid") + theme_dag()
+
+```
+
+Thank you!

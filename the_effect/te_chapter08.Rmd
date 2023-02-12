@@ -1,0 +1,125 @@
+---
+title: "Soc723 - TE Chapter 08"
+author: "Turgut Keskintürk"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: united
+    toc: true
+    number_sections: false
+    code_folding: "hide"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(fig.align = "center")
+
+# load the relevant packages
+pacman::p_load(
+  tidyverse, purrr, causaldata, patchwork, hrbrthemes, knitr, dagitty, ggdag
+)
+theme_set(theme_ipsum_rc()) # theme set for the plots
+
+```
+
+Hello there! Let's start our exercises for Huntington-Klein's *The Effect*, Chapter 8.
+
+## Q1
+
+If the path is Open (why capitalize, dude?), the nodes (well, variables) along the path are allowed to vary. If not (let's stay old British: if the path is Closed), at least one of the nodes are close for business (no variation). With no collider, it's all adjustments.
+
+## Q2
+
+Ah, this is tedious. Alright, let's start.
+
+a) The paths from X to Y:
+
+  1) $X \rightarrow A \rightarrow Y$
+  2) $X \rightarrow C \leftarrow D \rightarrow Y$
+  3) $X \rightarrow C \leftarrow D \rightarrow B \rightarrow Y$
+  4) $X \leftarrow B \rightarrow Y$
+  5) $X \leftarrow B \leftarrow D \rightarrow Y$
+
+b) The front-door path is only (1), as (2) and (3) are closed due to the collider $C$.
+c) The open back-door paths are (4) and (5).
+d) If we adjust for $B$, we can identify the effect of $X$ on $Y$. Voila!
+
+## Q3
+
+OK, we are gonna think about whether higher income causes better health. 
+
+a. Let's DAG it out.
+
+```{r, fig.width = 8, fig.height = 6, dpi = 300}
+
+dag <- dagitty(
+  "
+  dag
+  {
+  Income [exposure]
+  Health [outcome]
+  Income -> Health
+  Income <- Education -> Health
+  ParentalSES -> Income
+  ParentalSES -> Education
+  ParentalSES -> Health
+  Income -> HealthAttitudes -> Health
+  Education -> HealthAttitudes
+  }
+  "
+)
+
+set.seed(11235)
+ggdag_status(dag, text_col = "white", text_size = 1.5) + 
+  scale_color_manual(values = c("#720500", "#3A5874"),
+                     labels = c("Treatment", "Outcome")) +
+  labs(color = "Nodes") +
+  theme_dag(legend.position = "top")
+
+```
+
+b. The front-door paths are:
+
+  1) $Income \rightarrow Health$
+  2) $Income \rightarrow HealthAttitudes \rightarrow Health$
+
+c. The back-door paths are:
+
+  5) $Income \leftarrow Education \rightarrow Health$
+  6) $Income \leftarrow Education \leftarrow ParentalSES \rightarrow Health$
+  7) $Income \leftarrow ParentalSES \rightarrow Education \rightarrow HealthAttitudes \rightarrow Health$
+  8) $Income \leftarrow Education \rightarrow HealthAttitudes \rightarrow Health$
+  9) $Income \leftarrow ParentalSES \rightarrow Education \rightarrow Health$
+  10) $Income \leftarrow ParentalSES \rightarrow Health$
+
+d. The path that represents the direct effect is the path number (1).
+e. The good paths are (1) and (2). We should adjust for $Education$ and $ParentalSES$, and that's enough for total effect.
+
+## Q4
+
+Tne answer is **c**. We have been doing that above, so what's the point of asking this after all those questions?
+
+## Q5
+
+a. The $Popularity$ here is a collider variable.
+b. If we are to *control for* $Popularity$, we would open the path between $TeachingQuality$ and $NumberOfPublications$. If our DAG is correct, this would mean that even though there is no relation between the two, this control would create a relationship.
+
+## Q6
+
+OK, I am going to DAG the DAG out (hell yeah)! 
+
+a. Here are the paths:
+  1) $Lockdown \rightarrow Recession$
+  2) $Lockdown \rightarrow Unemployment \leftarrow PriorEconomy \rightarrow Recession$
+  3) $Lockdown \rightarrow Unemployment \rightarrow Recession$
+b. The front-door paths are (1) and (3) from above. The paths that include $Stimulus$ generate a collider with $Unemployment$.
+c. If we control for $Unemployment$, we would open paths that are closed ($PriorEconomy$ and $Stimulus$).
+d. I guess so? Not understood if there is any other intent in asking this question.
+e. One potential path from $Lockdown$ to $Recession$ can be $DecreasedProductivity$, which would mitigate economic production.
+
+## Q7
+
+As the back-door paths are generally confounds, we can think of things like parental wealth and parental ability. Both of these variables can be causes of higher education and higher income, which is why we have to condition on them for identification.
+
+Thank you!
