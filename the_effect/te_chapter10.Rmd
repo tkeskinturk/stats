@@ -1,0 +1,84 @@
+---
+title: "Soc723 - TE Chapter 10"
+author: "Turgut Keskintürk"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float:
+      collapsed: false
+    number_sections: false
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(fig.align = "center")
+
+# load the relevant packages
+pacman::p_load(
+  tidyverse, purrr, causaldata, patchwork, hrbrthemes, knitr, dagitty, ggdag
+)
+theme_set(theme_ipsum_rc()) # theme set for the plots
+
+```
+
+Hello there! Let's start our exercises for Huntington-Klein's *The Effect*, Chapter 10.
+
+## Q1
+
+Alright, here are my own definitions about these classy treatment effects:
+
+a. CATE is the average effect retrieved when we condition on one cluster in our dataset.
+b. ATT is what I call the *working* average effect, meaning that we generally observe ATT even though we wish for ATE. It is the effect when we just compute the difference between the treated and the untreated.*
+c. ATUT is the treatment effect that would be retrieved if the untreated were to be treated.
+
+*To be honest, the counterfactual notation with Rubin model is much better to describe these things.
+
+## Q2
+
+Suppose we study the effects of political cues on environmental behavior. We would expect that this effect is heterogeneous, as complying with these cues depends on one's political awareness and motivation to comply.
+
+## Q3
+
+a. The average treatment effect is $\frac{7+3+7+8+7+4}{6} = 6$.
+b. The average treatment effect conditional on being women is $\frac{3+7+4}{3} = 4.67$.
+c. The kind of treatment effect average we will get is the *Weighted Average Treatment Effect*. The numerical estimate we end up with will reflect the distributional differences between these groups.
+d. The kind of treatment effect average we will get is the *Conditional Average Treatment Effect*. The numerical estimate we end up with will reflect the treatment effect among teenagers.
+
+## Q4
+
+The issue with ATT and ATE is that, with true randomization, ATT = ATE. Yet, sometimes the fact of being treated is part of what we are interested in. An example might be the classic medical trials. We just wanna know whether the drug works.
+
+
+The gist of this distinction is that ATE extends the drug's effect to those who do not need the drug. It is a weird approach.
+
+## Q5
+
+The answer is (c), Intent-to-Treat. We compare assigning treatment to control group, even though some did not comply.
+
+## Q6
+
+a. The variance-weighted treatment effect is the effect we retrieve when our estimate weight the effect from those with more variation a lot more heavily compared to those with less variation. Well, this is just regression!
+b. The distribution-weighted treatment effect is the effect when we effectively pick up a sample. This is just matching!
+c. The VWTE is used when we close the back-door paths (regression), the DWTE is used when we weight the sample (matching).
+
+## Q7
+
+This question is a blow to the entire psychological enterprise.
+
+We can identify the *Conditional Average Treatment Effect*, which is the effect of treatment if you are this university's student.
+
+## Q8
+
+Here are the effects to be identified:
+
+a. **Average Treatment Effect**: A randomized experiment using a representative sample,
+b. **Conditional Average Treatment Effect**: True randomization within only a certain demographic group,
+c. **Variance-Weighted Treatment Effect** (Regression) and **Distribution-Weighted Treatment Effect** (Matching): Closing back door paths connected to variation in treatment,
+d. **Local Average Treatment Effect**: the variation in treatment variable that is driven by an exogenous variable,
+e. **Average Treatment Effect on the Treated** and **Average Treatment Effect on the Untreated**: The control group is comparable to the treatment group, but treatment effects may be different across these groups.
+
+Thank you!

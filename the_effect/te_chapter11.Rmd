@@ -1,0 +1,97 @@
+---
+title: "Soc723 - TE Chapter 11"
+author: "Turgut Keskintürk"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float:
+      collapsed: false
+    number_sections: false
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(fig.align = "center")
+
+# load the relevant packages
+pacman::p_load(
+  tidyverse, purrr, causaldata, patchwork, hrbrthemes, knitr, dagitty, ggdag
+)
+theme_set(theme_ipsum_rc()) # theme set for the plots
+
+```
+
+Hello there! Let's start our exercises for Huntington-Klein's *The Effect*, Chapter 11.
+
+## Q1
+
+I am assuming that the question is asking about the increase in one particular area. In that case, one easy strategy is to use college fixed effects in our model, so that all time-invariant characteristics are adjusted for.
+
+## Q2
+
+The central intuition for causal analysis is "exogenous variation." A method that isolates front doors allows us to use an exogenous variation, which effectively discards any backdoor paths that can pollute our identification.
+
+## Q3
+
+A robustness test describes a test where we want to see what happens to our estimates if we change one or more assumptions in our model. We conduct these tests to make sure that our causal estimates reflect the true data generating process, and the assumptions of our model are appropriate. One example is *placebo test*, where we look at the effects of a fake treatment to see if there are any "fake effects" observed, which would mean that there is an alternative process separating the two groups.
+
+## Q4
+
+Here are some potential confounders: (a) Parent SES, (b) Parental College Status, (c) Geographic Region, (d) Student Aspirations, and (e) Student Intelligence. It might not be feasible to adjust for (e).
+
+## Q5
+
+I think partial identification is a pretty cool idea: it describes the approach where we relax our assumptions and produce a range of estimates. Seems very much in line with the multiverse analysis of Cristobel Young.
+
+## Q6
+
+a. I am going to reproduce *Figure 8.1* from Page 117. Let me draw the DAG:
+
+```{r, fig.width = 8, fig.height = 4, dpi = 300}
+
+dag <- dagitty(
+  "
+  dag
+  {
+  A -> B -> C
+  D -> E -> A
+  E -> B
+  D -> C
+  }
+  "
+)
+
+coordinates(dag) <- 
+  list(
+    x = c(A = 1, B = 2, C = 3, D = 3, E = 2),
+    y = c(A = 1, B = 1, C = 1, D = 2, E = 2)
+  )
+
+set.seed(11235)
+ggdag(dag, layout = "grid") + theme_dag()
+
+```
+
+b. One potential link that we can talk about is between $E$ to $C$. We can draw a link from $E$ to $C$, but we cannot do it from $C$ to $E$, as the latter would generate a cycle in our DAG.
+
+c. In order to eliminate the relationship from $E$ to $D$, we need to adjust for $D$, as it connects the two and ;$B$, to eliminate the paths $E \rightarrow A \rightarrow B \rightarrow C$ and $E \rightarrow B \rightarrow C$.
+
+d. If I still get a non-zero result, I would say (a) either the DAG is wrong or (b) there is measurement error.
+
+## Q7
+
+The bounded estimates are partial identification estimates with varying assumptions. If the effect is bounded from above at 2% (whether positive or negative), this means that there is pressure from above. Assuming this is true:
+
+a. If the effect is 2%, and positive, the effect cannot be above 2% but it should be above 0 as well,
+b. If the effect is 2%, and negative, the effect cannot be above -2%, meaning that it is negative all the way through,
+c. If the effect is *at least as large as 2 percentage points*, we know for certainty that the effect is 2 percentage points, but we do not know whether the direction of this effect is positive (2%) or negative (-2%),
+d. If the effect is no larger than 2 percentage point, it ranges from -2% to 2%,
+e. OK, the idea is that our assumptions constrain us to these ranges, but if we make an additional assumption, it can change.
+
+The structure of this question seems a bit weird. I hope I understood it correctly!
+
+Thank you!
