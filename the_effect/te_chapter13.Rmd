@@ -1,0 +1,214 @@
+---
+title: "Soc723 - TE Chapter 13"
+author: "Turgut Keskintürk"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float:
+      collapsed: false
+    number_sections: false
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(fig.align = "center")
+
+# load the relevant packages
+pacman::p_load(
+  tidyverse, broom, margins, hrbrthemes, patchwork, knitr, modelsummary
+)
+theme_set(theme_ipsum_rc()) # theme set for the plots
+
+```
+
+Hello there! Let's start our exercises for Huntington-Klein's *The Effect*, Chapter 13.
+
+# Conceptual Questions
+
+## Q1
+
+The *error* for Observation A is 1 in the simulated data, while the *residual* from the model is 0.9.
+
+## Q2
+
+Alright, looking at the DAG shows us that the adjustment set consists of ${A, B}$. Thus, the equation is $Y = \beta_0 + \beta_1A + \beta_2B$.
+
+## Q3
+
+The coefficient $\hat{B}_1$ means that, for each unit increase in $X$, we see an increase of 3 units in $Y$. The coefficient is significant (sigh), with t-value is above 1.96 ($t = 2.31$), meaning that the coefficient is precisely different from 0 at $\alpha = 0.05$.
+
+## Q4
+
+Here are the answers for the questions: (a) $76.2$ hours worked, (b) the standard error is $19.7$, (c) the model 3 intercept, which is $306.6$, (d) the *N* is $3,382$ in all models, and (e) yes, it is significant ($t = -13$).
+
+## Q5
+
+Here are the answers for the questions: (a) $110.230 - 3.162*YearsEducation$, (b) this is $110.230 - 3.162*16 = 59.64$, (c) it gets less positive, and (d) the diminishing return is scientifically reasonable, we might overfit otherwise!
+
+## Q6
+
+Here are the answers for the questions: (a) the coefficient on $Homeowner$ is the conditional mean difference for home-owners and non-home-owners, which is $50.2$ hours, (b) this is $150.5$ hours, and (c) no -- we might change the ordering.
+
+## Q7
+
+Here are the answers for the questions: 
+
+(a) A positive increase of $110.1$, 
+(b) Assuming that earnings means hours, an increase of $683$ hours, which is significant at $\alpha = 0.05$, 
+(c) The coefficient $Homeowner x Education$ basically measures whether the effect of $Education$ on $Hours$ is different across $Homeowner$ status (or vice versa in terms of position). It says that the return is lower for homeowners,
+(d) Since the outcome is logged, one unit change in $Education$ means $0.067 * 100 = 6.7 \%$ change in $Hours$,
+(e) 10% increase in education is $832.35/10 = 83.2$ change in hours worked,
+(f) There are probably cases where the individuals do not work at all, with Annual Hours Worked equal to 0.
+
+## Q8
+
+The best definition is (a), suggesting that there is information across groups, with some form of aggregating unit (e.g., time).
+
+## Q9
+
+The heteroskedasticity is the change in variation across the values of $X$, so (b) applies. It is also reasonable to assume that, if there is strong heteroskedasticity, the explained variance is likely low; hence, (d) also applies.
+
+## Q10
+
+Well, this is simply sample weights, where certain observations are weighted according to a prespecified distribution.
+
+## Q11
+
+When the measurement error is non-classical, the error term is somehow related to our true value. Thus, the answer is (a), where there is systematic error in retrieving the true values (some people are *systematically* underreporting $X$).
+
+# Coding Questions
+
+## Q1
+
+Let's load the data.
+
+```{r}
+
+d <- read.csv("https://vincentarelbundock.github.io/Rdatasets/csv/DAAG/dengue.csv")
+
+```
+
+## Q2
+
+A regression of whether dengue is observed on average humidity:
+
+```{r}
+
+m1 <- lm(NoYes ~ humid, data = d)
+modelsummary(m1)
+
+```
+
+## Q3
+
+The estimations show that if average humidity is 0, the probability of observing dengue is -42% (hell yeah). For each unit increase in humidity, the model expects 5% increase in the probability of observing dengue, which is *significant* at $\alpha = 0.05$.
+
+## Q4
+
+Here is the summary statistics for the $humid$ variable:
+
+```{r}
+
+d |> select(humid) |> summary() |> t()
+
+```
+
+As we can see, the minimum value of humidity is $0.67$, which is helpful in the sense that the intercept is the value where humidity is $0$, which is out-of-scope of our predictor. Thus, it is advisable not to interpret this weird intercept at all!
+
+## Q5
+
+OK, we are going to add the temperature to the model:
+
+```{r}
+
+m2 <- lm(NoYes ~ humid + temp, data = d)
+modelsummary(m2)
+
+```
+
+There are some non-negligible negative effects of temperature, and small adjustments to the humidity effects.
+
+## Q6
+
+Let's fit the logistic regression and print the average marginal effects of $humid$ and $temp$:
+
+```{r}
+
+m3 <- glm(NoYes ~ humid + temp, data = d, family = "binomial")
+m3 |> margins(variables = c("humid", "temp")) |> summary()
+
+```
+
+## Q7
+
+This time we are interested in the relationship between humidity and temperature. Let's do it!
+
+```{r, fig.width = 8, fig.height = 4, dpi = 300}
+
+# processing
+d <- d |> filter(is.na(humid) == FALSE)
+
+# estimate
+m4 <- lm(humid ~ temp, data = d)
+
+# residuals
+d <- d |> mutate(res = resid(m4))
+
+# plot the variance
+d |> 
+  ggplot(aes(x = temp, y = res)) +
+  geom_point() +
+  geom_hline(yintercept = 0) +
+  labs(title = "Model Residuals",
+       x = "Temperature", y = "Residuals")
+
+```
+
+Horrendous! The `modelsummary` package allows me to estimate the regression with robust standard errors, so here it is:
+
+```{r}
+
+modelsummary(m4, title = "Regular Model")
+modelsummary(m4, vcov = "HC1", title = "Robust Standard Errors")
+
+```
+
+As we can see, the standard errors are slightly inflated, suggesting that there is indeed some heteroskedasticity.
+
+## Q8
+
+OK, the same model, but this time humidity with logarithmic transformation:
+
+```{r}
+
+m5 <- lm(log(humid) ~ temp, data = d)
+modelsummary(m5, vcov = "HC1", title = "Robust Standard Errors")
+
+```
+
+One unit change in temperature leads to 5.6% change in humidity.
+
+## Q9
+
+If we look at the plot below, we see that there is a marginal return to increased temperature. Once we log the humidity, we capture this marginal relationship; hence, linear in log is increased (or decreased) return to our predictor.
+
+```{r, fig.width = 12, fig.height = 4, dpi = 300}
+
+p1 <- d |> 
+  ggplot(aes(x = temp, y = humid)) + 
+  geom_point() +
+  labs(title = "Original Scale", x = "Temperature", y = "Humidity")
+
+p2 <- d |> 
+  ggplot(aes(x = temp, y = log(humid))) + 
+  geom_point() +
+  labs(title = "Logged Scale", x = "Temperature", y = "Humidity (Logged)")
+
+p1 + p2
+
+```
+
