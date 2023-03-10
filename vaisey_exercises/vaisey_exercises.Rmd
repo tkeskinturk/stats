@@ -1,0 +1,370 @@
+---
+title: "Soc723 - Vaisey Exercises"
+author: "Turgut Keskintürk"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float:
+      collapsed: false
+    number_sections: false
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(fig.align = "center")
+
+# load the relevant packages
+pacman::p_load(
+  tidyverse, broom, margins, hrbrthemes, patchwork, knitr, cobalt, MatchIt, WeightIt, survey, modelsummary
+)
+theme_set(theme_ipsum_rc()) # theme set for the plots
+
+load("exercise_data.Rdata") # load the data
+
+# some transformations
+d <- d |> 
+  mutate(treatment = factor(treat, labels = c("No Treatment", "Treatment")))
+d_exper <- d_exper |> 
+  mutate(treatment = factor(treat, labels = c("No Treatment", "Treatment")))
+
+# easy model summary function
+model_summary <- function(...) {
+  modelsummary(list(...), gof_omit = 'Num.Obs|R2 Adj.|Log.Lik.|F|DF|Deviance|AIC|BIC|RMSE', fmt = 2,
+               coef_omit = c(-1, -2), coef_rename = c("treatmentTreatment" = "Treatment"))
+}
+
+```
+
+Hello there! Let's start our exercises for Vaisey's matching questions.
+
+## Q1
+
+I am going to do a t-test to see the differences between the treated group and the control group:
+
+```{r}
+
+t.test(re78 ~ treat, data = d_exper) |> 
+  tidy() |> select(estimate, estimate1, estimate2, statistic, conf.low, conf.high) |> 
+  kable(caption = "Experimental Data", digits = 2)
+
+t.test(re78 ~ treat, data = d) |>
+  tidy() |> select(estimate, estimate1, estimate2, statistic, conf.low, conf.high) |> 
+  kable(caption = "Observational Data", digits = 2)
+
+```
+
+## Q2
+
+I am now going to generate a couple of formula lists for the upcoming storm:
+
+```{r}
+
+formula.easy <- "age + educ + black + hisp + married + nodegr + u74 + u75"
+formula.hard <- "age + I(age^2) + educ + I(educ^2) + black + hisp + married + nodegr + u74 + u75"
+formula.bins <- "black + hisp + married + nodegr + u74 + u75"
+
+```
+
+Alright. Here are the basic linear regressions showing the overall difference between treatment and control groups, after adjusting a bunch of controls. They are still wildly different!
+
+```{r}
+
+lm.1 <- lm(
+  as.formula(paste("re78", "~", "treatment", "+", formula.hard)), data = d_exper)
+lm.2 <- lm(
+  as.formula(paste("re78", "~", "treatment", "+", formula.hard)), data = d)
+model_summary("Experimental" = lm.1, "Observational" = lm.2)
+
+```
+
+As we can see, while the experimental estimate is $0.72$, the observational estimate is $-1.94$.
+
+## Q3
+
+Let's do an exact matching using all the dummy variables.
+
+```{r}
+
+# exact matching
+m.exact <- matchit(
+  as.formula(paste("treat", "~", formula.bins)),
+  data = d, method = "exact")
+
+# out
+summary(m.exact)$nn |> round(0)
+
+```
+
+We lose $10$ treatment case and $121$ control case -- $131$ in total. I am going to take the weights and estimate a regression:
+
+```{r}
+
+lm.3 <- lm(re78 ~ treatment, data = d, weights = m.exact$weights)
+model_summary(lm.3)
+
+```
+
+The estimation is $-2.39$, which is even more far away to the experimental estimate than the naive observational estimate.
+
+## Q4
+
+Alright, let's do the propensity score modeling!
+
+```{r, fig.width = 8, fig.height = 4, dpi = 300}
+
+# regression
+lm.4 <- glm(
+  as.formula(paste("treatment", "~", formula.hard, "+", "re74 + re75 + I(re74^2) + I(re75^2)")),
+  data = d, family = binomial)
+
+# propensity scores and visualization
+d |>
+  mutate(response = predict(lm.4, type = "response")) |> 
+  ggplot(aes(x = response, fill = treatment)) +
+  geom_density() + facet_wrap(~ treatment, scale = "free") +
+  scale_fill_manual(values = c("#9986A5", "#79402E")) +
+  theme(legend.position = "top") +
+  labs(x = "Propensity Score", y = "Density", fill = "Status")
+
+```
+
+Awesome! But what about those densities?
+
+## Q5
+
+The same formulation, this time with 1:1 nearest-neighbor matching:
+
+```{r, fig.width = 10, fig.height = 10, dpi = 300}
+
+# matching
+m.nn.nr <- matchit(
+  as.formula(paste("treatment", "~", formula.hard, "+", "re74 + re75 + I(re74^2) + I(re75^2)")),
+  data = d, method = "nearest", distance = "glm", replace = FALSE)
+
+m.nn.yr <- matchit(
+  as.formula(paste("treatment", "~", formula.hard, "+", "re74 + re75 + I(re74^2) + I(re75^2)")),
+  data = d, method = "nearest", distance = "glm", replace = TRUE)
+
+# bal plots
+
+p1 <- bal.plot(m.nn.nr, var.name = "distance", which = "both",
+               colors = c("#9986A5", "#79402E")) +
+  theme(legend.position = "top") +
+  labs(
+    title = "Balance Without Replacement",
+    x = "Propensity Score", y = "Density", fill = "Status")
+
+p2 <- bal.plot(m.nn.yr, var.name = "distance", which = "both",
+               colors = c("#9986A5", "#79402E")) +
+  theme(legend.position = "top") +
+  labs(
+    title = "Balance With Replacement",
+    x = "Propensity Score", y = "Density", fill = "Status")
+
+p1 / p2
+  
+```
+
+Balance with replacement is much better! This is probably because the common support is weak. Let's look at it:
+
+```{r, fig.width = 10, fig.height = 5, dpi = 300}
+
+plot(m.nn.nr, type = "jitter", interactive = FALSE, sub = "No Replacement")
+plot(m.nn.yr, type = "jitter", interactive = FALSE, sub = "With Replacement")
+
+```
+
+Yes! As we can see, there are very few cases in the control group to correctly match with the treatment group. By using those observations more than once (with replacement), we give more flexibility to the algorithm.
+
+Let's estimate the treatment effects and compare:
+
+```{r}
+
+lm.5 <- lm(re78 ~ treatment, data = d, weights = m.nn.nr$weights)
+lm.6 <- lm(re78 ~ treatment, data = d, weights = m.nn.yr$weights)
+
+model_summary("No Replacement" = lm.5, "With Replacement" = lm.6)
+
+```
+
+As we can see, there is a huge difference between the estimates, and the latter is closer to the experimental estimate.
+
+## Q6
+
+Yay, weighting time! Let me first build the weighting model:
+
+```{r}
+
+m.weight <- weightit(
+    as.formula(paste("treatment", "~", formula.hard, "+", "re74 + re75 + I(re74^2) + I(re75^2)")),
+    data = d, estimand = "ATT", method = "ps")
+
+```
+
+Alright. Let's check the covariate balance:
+
+```{r, fig.width = 10, fig.height = 5, dpi = 300}
+
+love.plot(m.weight, abs = TRUE, 
+          stats = c("m", "ks"), thresholds = c(0.10, 0.05),
+          position = "top")
+
+```
+
+This is not very good, and the KS Statistics are terrible. Let's say it's true, though. I am going to fit the model with these weights and present the treatment effect from that model:
+
+```{r}
+
+lm.7 <- lm(re78 ~ treatment, data = d, weights = m.weight$weights)
+model_summary(lm.7)
+
+```
+
+This is also close to the experimental estimate.
+
+## Q7
+
+I am going to replicate the codes above, this time with covariate balancing propensity scores:
+
+```{r, fig.width = 10, fig.height = 5, dpi = 300}
+
+# matching
+m.weight.cb <- weightit(
+    as.formula(paste("treatment", "~", formula.hard, "+", "re74 + re75 + I(re74^2) + I(re75^2)")),
+    data = d, estimand = "ATT", method = "CBPS")
+
+# love plot
+love.plot(m.weight.cb, abs = TRUE, 
+          stats = c("m", "ks"), thresholds = c(0.10, 0.05),
+          position = "top")
+
+# regression
+lm.8 <- lm(re78 ~ treatment, data = d, weights = m.weight.cb$weights)
+model_summary(lm.8)
+
+```
+
+Much better! Even though there are certain problems in the KS statistics, we got an incredibly good balance in covariates and the treatment effect estimate is even closer to the experimental one!
+
+## Q8
+
+The same train continues! This time with Mahalanobis distance matching:
+
+```{r, fig.width = 10, fig.height = 5, dpi = 300}
+
+# matching
+m.mahala <- matchit(
+    as.formula(paste("treatment", "~", formula.hard, "+", "re74 + re75 + I(re74^2) + I(re75^2)")),
+    distance = "glm", caliper = 0.1,
+    mahvars = c("age", "educ", "black", "hisp", "married", "nodegr", "re74", "re75", "u74", "u75"),
+    data = d, estimand = "ATT", replace = TRUE)
+
+summary(m.mahala)$nn |> round(0)
+
+```
+
+As we can see, 86 unique control cases are matched. It's highly low!
+
+## Q9
+
+I am going to perform entropy balancing and look at the balance on means and variances:
+
+```{r, fig.width = 10, fig.height = 5, dpi = 300}
+
+# matching
+m.weight.ent <- weightit(
+    treatment ~ age + educ + black + hisp + married + nodegr + re74 + re75 + u74 + u75,
+    data = d, method = "ebal", moments = 2, estimand = "ATT")
+
+# love plot
+love.plot(m.weight.ent, abs = TRUE, 
+          stats = c("m", "var"), thresholds = c(0.10, 0.05),
+          position = "top")
+
+```
+
+Alright, as we can see there are strong balance on means. Since there is no variation for binary variables, the love plot above shows variance ratios for the continuous variables, which are also balanced.
+
+## Q10
+
+In what follows, I will estimate all the regressions that I presented above by using doubly robust estimations:
+
+```{r}
+
+# exact matching
+lm.r.3 <- lm(
+  as.formula(paste("re78", "~", "treatment", "+", formula.hard)),
+  data = d, weights = m.exact$weights)
+
+model_summary("Exact Matching" = lm.3, "Doubly-Robust Exact Matching" = lm.r.3)
+
+# 1-to-1 matching with replacement
+lm.r.6 <- lm(
+  as.formula(paste("re78", "~", "treatment", "+", formula.hard)),
+  data = d, weights = m.nn.yr$weights)
+
+model_summary("1:1 with Replacement" = lm.6, "Doubly-Robust 1:1 with Replacement" = lm.r.6)
+
+# weighted regression
+lm.r.8 <- lm(
+  as.formula(paste("re78", "~", "treatment", "+", formula.hard)),
+  data = d, weights = m.weight$weights)
+
+model_summary("PS Weighting" = lm.8, "Doubly-Robust PS Weighting" = lm.r.8)
+
+# covariate balancing propensity score
+lm.r.8 <- lm(
+  as.formula(paste("re78", "~", "treatment", "+", formula.hard)),
+  data = d, weights = m.weight.cb$weights)
+
+model_summary("CBPS" = lm.8, "Doubly-Robust CBPS" = lm.r.8)
+
+# mahalanobis distance matching
+lm.9 <- lm(re78 ~ treatment, data = d, weights = m.mahala$weights)
+lm.r.9 <- lm(
+  as.formula(paste("re78", "~", "treatment", "+", formula.hard)),
+  data = d, weights = m.mahala$weights)
+
+model_summary("Mahalanobis" = lm.9, "Doubly-Robust Mahalanobis" = lm.r.9)
+
+```
+
+1:1 Matching with Replacement, Covariate Balancing Propensity Score and (party) PS Weighting are not bad. The others are dead!
+
+## Q11
+
+I really like bootstraps. Here is a function and implementation, following Noah Greifer's excellent vignette. I will just use propensity score weighting, as it's faster to implement.
+
+```{r}
+
+library(boot)
+
+set.seed(11235)
+
+# function
+est.fun <- function(data, index) {
+  w <-
+    weightit(
+      treat ~ age + I(age^2) + educ + I(educ^2) + black + hisp + married + nodegr + re74 + re75,
+      data = data[index, ],
+      estimand = "ATT", method = "ps")
+  m <- 
+    glm(re78 ~ treat, data = data[index, ], weights = w$weights)
+  return(coef(m)["treat"])
+}
+
+# bootstrap
+boots <- boot(est.fun, data = d, R = 500)
+
+# return the estimates
+boots
+
+```
+
+Yes! We see that the estimated standard error is $0.86$, which is pretty high!
+
+Thank you!
