@@ -1,0 +1,283 @@
+---
+title: "Soc723 - TE Chapter 16"
+author: "Turgut Keskintürk"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: "hide"
+    toc: true
+    toc_float:
+      collapsed: false
+    number_sections: false
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(fig.align = "center")
+
+# load the relevant packages
+pacman::p_load(
+  tidyverse, broom, lme4, fixest, car, hrbrthemes, patchwork, knitr, modelsummary, dagitty, ggdag
+)
+theme_set(theme_ipsum_rc()) # theme set for the plots
+
+# easy model summary function
+model_summary <- function(...) {
+  modelsummary(list(...), gof_omit = 'Num.Obs|R2 Adj.|Log.Lik.|F|DF|Deviance|AIC|BIC|RMSE', fmt = 2)
+}
+
+```
+
+Hello there! Let's start our exercises for Huntington-Klein's *The Effect*, Chapter 16.
+
+# Conceptual Questions
+
+## How Does It Work?
+
+### Q1
+
+Here are the observations described in the question:
+
+People  | 2012   | 2013  | 2014  |
+:-----: | :----: | :---: | :---: |
+Zack    | $3$    | $7$   | $5$   |
+Skyler  | $2$    | $6$   | $10$  |
+
+We see that the mean for Zack is $5$, while the mean for Skyler is $6$. We can subtract these means from the respective observations to have the within-variance across time, which I present below:
+
+People  | 2012   | 2013  | 2014  |
+:-----: | :----: | :---: | :---: |
+Zack    | $-2$   | $2$   | $0$   |
+Skyler  | $-4$   | $0$   | $4$   |
+
+With these in mind, (a) the variation between Zack and Skyler is represented with their mean values above, while (b) the variation within the observations is represented in the difference table.
+
+Since regression is variance-weighted (more variation results in more weight), (c) the estimate will be closer to 2.
+
+### Q2
+
+Here is one potential DAG connecting cultural events to social trust:
+
+```{r, fig.width = 15, fig.height = 5, dpi = 300}
+
+dag <- dagitty(
+  "
+  dag
+  {
+  CulturalEvents -> Trust
+  CulturalEvents <- CityLevelGDP -> Trust
+  CulturalEvents <- EthnicComposition -> Trust
+  CulturalEvents <- MonthlyCrime -> Trust
+  CulturalEvents <- CulturalHistory -> Trust
+  }
+  "
+)
+
+coordinates(dag) <- 
+  list(
+    x = c(CulturalEvents = 1, Trust = 4,
+          CityLevelGDP = 2, EthnicComposition = 2, MonthlyCrime = 3, CulturalHistory = 3),
+    y = c(CulturalEvents = 1, Trust = 1,
+          CityLevelGDP = 2, EthnicComposition = 3, MonthlyCrime = 2, CulturalHistory = 3)
+  )
+
+set.seed(11235)
+ggdag_classic(dag) + theme_dag()
+
+```
+
+If my expectations are true, using fixed effects would close `CityLevelGDP`, `EthnicComposition` and `CulturalHistory`, but not the rate of crime, `MonthlyCrime`, that is also varying over time.
+
+### Q3
+
+The classifications of "between variation," "within variation," or "mixed" are below:
+
+(a) This is within-variation (change in a person's height as they age),
+(b) This seems both: between variation across individuals, within variation across years,
+(c) This is between-variation -- just comparing one city to another,
+(d) This is the comparison across the fixed-effects components, so it still counts as between-variation,
+(e) This is within-variation, as we look at the Davis' album after we subtract the jazz fixed effect,
+(f) OK, this is a bit tricky: as far as we interpret this as simple comparison, this is more like (d), and a between-variation; if we interpret this as compared to their genre, then it is within-between variance.
+
+### Q4
+
+It controls for the individual, as the mean value of an observation captures the non-changing attributes of that observation.
+
+## How Is It Performed?
+
+### Q1
+
+Ah, Steve should be angry now that I am dropping the causal language: the coefficient of 3.6 implies that, **for a given city**, where cultural events are 1-unit higher than it typically is, we expect trust to be 3.6 points higher than it typically is.
+
+### Q2
+
+Here it is: the coefficient of 2.4 implies that, **for a given city in a given year**, where cultural events are 1-unit higher than it typically is, we expect trust to be 2.4 points higher than it typically is.
+
+### Q3
+
+It might be the case that year effects are wildly variable and any functional form would risk not accounting for it.
+
+### Q4
+
+If the mighty list of assumptions hold, the best pay-off of using random-effects is to get rid of the noisy (possibly low N) estimates for each unit. As (c) suggests, this helps the model use the information from the entire dataset.
+
+# Coding Questions
+
+## Q1
+
+Let's load the data, select the variables of interest, and glimpse to the dataset:
+
+```{r}
+
+d <- read.csv("https://raw.githubusercontent.com/NickCH-K/TheEffectAssignments/main/mathpnl.csv") |> 
+  select(distid, year, math4, expp, lunch)
+
+glimpse(d)
+
+```
+
+## Q2
+
+Let's look at the dimensions of the dataset. As we see, $N = 550$ and $T = 7$.
+
+```{r}
+
+length(unique(d$distid)); length(unique(d$year))
+
+```
+
+## Q3
+
+Let's check whether this is a balanced data. I will count the number of ways each district appears in the data:
+
+```{r}
+
+d |> 
+  group_by(distid) |> 
+  summarize(n.waves = n()) |> 
+  count(n.waves)
+
+```
+
+As we can see, the dataset is balanced, given that each district appears exactly 7 times.
+
+## Q4
+
+OLS time! Let's do an OLS and present the results:
+
+```{r}
+
+# regression
+m1 <- lm(math4 ~ expp + lunch, data = d)
+
+# model summary
+model_summary(m1)
+
+```
+
+## Q5
+
+The modification! I will include fixed effects for districts "by hand," by subtracting means for each variable, and regress:
+
+```{r}
+
+# new variables
+d <- d |> 
+  group_by(distid) |> 
+  mutate(math4.demean = math4 - mean(math4, na.rm = TRUE),
+         expp.demean = expp - mean(expp, na.rm = TRUE),
+         lunch.demean = lunch - mean(lunch, na.rm = TRUE)) |> 
+  ungroup()
+
+# regression
+m2 <- lm(math4.demean ~ expp.demean + lunch.demean, data = d)
+
+# model summary
+model_summary(m2)
+
+```
+
+## Q6
+
+Using the first 500 observations, I am going to fit a fixed effects model and perform a joint F test:
+
+```{r}
+
+# regression
+m3 <- lm(math4 ~ expp + lunch + factor(distid), data = d |> slice(1:500))
+
+# joint f-test
+m3.test <- linearHypothesis(
+  m3, tidy(m3) |> select(term) |> filter(str_detect(term, "factor")) |> pull(term))
+
+```
+
+Not showing the output for the test, as it is long, but there *is* a difference, meaning that we should include fixed effects.
+
+## Q7
+
+Let's fit a model using the `fixest` package:
+
+```{r}
+
+# regression
+m4 <- feols(math4 ~ expp + lunch | distid, data = d)
+
+# model summary
+model_summary(m4)
+
+```
+
+Neat!
+
+## Q8
+
+This time, I will fit a two-way fixed effects model by including `year` as well:
+
+```{r}
+
+# regression
+m5 <- feols(math4 ~ expp + lunch | distid + year, data = d)
+
+# model summary
+model_summary(m5)
+
+```
+
+## Q9
+
+Huh, I was doing this! Let me give you the outputs of all these models in one table:
+
+```{r}
+
+modelsummary(list(m1, m2, m3, m4, m5), coef_omit = "distid")
+
+```
+
+Oh, boy! I really liked this table. `modelsummary` rocks. One interesting thing is that the effects of `lunch` are washed away after we include `year` fixed effects. It's also interesting that `lunch` switched signs in fixed effects models.
+
+## Q10
+
+I am going to use `lme4` for estimating correlated random effects models:
+
+```{r}
+
+# some manipulations
+d <- d |> 
+  group_by(distid) |> 
+  mutate(
+    id = factor(distid),
+    expp.mean = mean(expp, na.rm = TRUE), lunch.mean = mean(lunch, na.rm = TRUE)
+  ) |> ungroup()
+
+# regression
+m6 <- lmer(math4 ~ expp.demean + expp.mean + lunch.demean + lunch.mean + (1 | id), data = d)
+
+# model summary
+modelsummary(m6)
+  
+```
+
+Thank you!
